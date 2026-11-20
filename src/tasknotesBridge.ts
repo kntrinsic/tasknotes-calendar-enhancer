@@ -1266,3 +1266,259 @@ export function refreshOpenCalendarViews(app: App): void {
 		}
 	}
 }
+
+export interface CalendarNormalizedItem {
+	id: string;
+	startDay: number;
+	endDay: number;
+	allDay: boolean;
+	item: {
+		display?: string;
+		preview?: boolean;
+	};
+}
+
+export interface CalendarItemPoolLike {
+	begin: () => void;
+	place: (key: string, meta: Record<string, unknown>) => HTMLElement;
+	end: () => void;
+	clear: () => void;
+	used?: Set<string>;
+}
+
+export interface DayGridDotCellLike {
+	box: HTMLElement;
+	pool: CalendarItemPoolLike;
+	count: HTMLElement;
+}
+
+export interface DayGridWeekLike {
+	days: number[];
+	row: HTMLElement;
+	cells: HTMLElement[];
+	layer: HTMLElement;
+	more: HTMLElement;
+	pool: CalendarItemPoolLike;
+	dots: DayGridDotCellLike[];
+}
+
+export interface DayGridViewLike {
+	el: HTMLElement;
+	weeks: DayGridWeekLike[];
+	topPx?: number;
+	dotsMode?: boolean;
+	ctx: Record<string, unknown>;
+	render: (change: unknown) => void;
+	renderDots: (week: DayGridWeekLike) => void;
+	itemsFor: (week: DayGridWeekLike) => CalendarNormalizedItem[];
+}
+
+export interface DayGridContextInfo {
+	dayMaxEvents: boolean | number | null;
+	order: ((a: CalendarNormalizedItem, b: CalendarNormalizedItem) => number) | null;
+	draggingId: string | null;
+	doc: Document;
+	win: Window;
+	formatLongDate: (day: number) => string;
+	formatItemCount: (count: number) => string;
+	formatMoreLabel: (count: number) => string;
+	openMore: (day: number, anchor: HTMLElement, event: MouseEvent | KeyboardEvent) => void;
+}
+
+function isItemPoolLike(value: unknown): value is CalendarItemPoolLike {
+	return (
+		isRecord(value) &&
+		asCallable(value.begin) !== null &&
+		asCallable(value.place) !== null &&
+		asCallable(value.end) !== null &&
+		asCallable(value.clear) !== null
+	);
+}
+
+function isDayGridDotCellLike(value: unknown): value is DayGridDotCellLike {
+	return (
+		isRecord(value) &&
+		isElementLike(value.box) &&
+		isItemPoolLike(value.pool) &&
+		isElementLike(value.count)
+	);
+}
+
+function isDayGridWeekLike(value: unknown): value is DayGridWeekLike {
+	return (
+		isRecord(value) &&
+		Array.isArray(value.days) &&
+		value.days.every((day) => typeof day === "number" && Number.isInteger(day)) &&
+		isElementLike(value.row) &&
+		Array.isArray(value.cells) &&
+		value.cells.every((cell) => isElementLike(cell)) &&
+		isElementLike(value.layer) &&
+		isElementLike(value.more) &&
+		isItemPoolLike(value.pool) &&
+		Array.isArray(value.dots) &&
+		value.dots.every((dot) => isDayGridDotCellLike(dot))
+	);
+}
+
+/**
+ * Validates whether a runtime object matches the subset of `@tasknotes/calendar` `DayGridView`
+ * required for spanning month chips.
+ */
+export function asDayGridView(candidate: unknown): DayGridViewLike | null {
+	if (!isRecord(candidate)) {
+		return null;
+	}
+	if (
+		!isElementLike(candidate.el) ||
+		!Array.isArray(candidate.weeks) ||
+		!isRecord(candidate.ctx) ||
+		!asCallable(candidate.render) ||
+		!asCallable(candidate.renderDots) ||
+		!asCallable(candidate.itemsFor)
+	) {
+		return null;
+	}
+	if (!candidate.weeks.every((week) => isDayGridWeekLike(week))) {
+		return null;
+	}
+	return candidate as unknown as DayGridViewLike;
+}
+
+/**
+ * Checks whether a `@tasknotes/calendar` instance has been destroyed.
+ */
+export function isCalendarDestroyed(rawCalendar: object): boolean {
+	return isRecord(rawCalendar) && rawCalendar.destroyed === true;
+}
+
+/**
+ * Returns the active `DayGridView` for a TaskNotes `Calendar` instance when mounted and valid.
+ */
+export function getCalendarDayGridView(rawCalendar: object): DayGridViewLike | null {
+	if (!isRecord(rawCalendar) || rawCalendar.destroyed === true) {
+		return null;
+	}
+	return asDayGridView(rawCalendar.current);
+}
+
+/**
+ * Extracts validated formatting, ordering, and popover callbacks from a `DayGridView` context.
+ */
+export function readDayGridContext(view: DayGridViewLike): DayGridContextInfo | null {
+	const ctx = view.ctx;
+	if (!isRecord(ctx)) {
+		return null;
+	}
+
+	const opts = isRecord(ctx.opts) ? ctx.opts : null;
+	const dayMaxEvents = opts ? getDayMaxEventsValue(opts.dayMaxEvents) : null;
+
+	const orderFn = asCallable(ctx.order);
+	const order = orderFn
+		? (a: CalendarNormalizedItem, b: CalendarNormalizedItem): number => {
+				try {
+					const result = orderFn.call(ctx, a, b);
+					return typeof result === "number" && Number.isFinite(result) ? result : 0;
+				} catch {
+					return 0;
+				}
+			}
+		: null;
+
+	const draggingId =
+		typeof ctx.draggingId === "string" && ctx.draggingId.length > 0 ? ctx.draggingId : null;
+
+	const docCandidate = ctx.doc;
+	const doc: Document =
+		isRecord(docCandidate) && typeof docCandidate.createElement === "function"
+			? (docCandidate as unknown as Document)
+			: view.el.ownerDocument;
+
+	const winCandidate = ctx.win;
+	const win: Window =
+		isRecord(winCandidate) && typeof winCandidate.getComputedStyle === "function"
+			? (winCandidate as unknown as Window)
+			: (doc.defaultView ?? window);
+
+	const fmt = isRecord(ctx.fmt) ? ctx.fmt : null;
+	const longDateFn = fmt ? asCallable(fmt.longDate) : null;
+	const formatLongDate = (day: number): string => {
+		if (longDateFn && fmt) {
+			try {
+				const result = longDateFn.call(fmt, day);
+				if (typeof result === "string") {
+					return result;
+				}
+			} catch {
+				// Fall back to formatted UTC date string.
+			}
+		}
+		return formatDayNumber(day) ?? String(day);
+	};
+
+	const text = isRecord(ctx.text) ? ctx.text : null;
+	const itemCountFn = text ? asCallable(text.itemCount) : null;
+	const formatItemCount = (count: number): string => {
+		if (itemCountFn && text) {
+			try {
+				const result = itemCountFn.call(text, count);
+				if (typeof result === "string") {
+					return result;
+				}
+			} catch {
+				// Fall back to default English pluralization.
+			}
+		}
+		return count === 1 ? "1 item" : `${String(count)} items`;
+	};
+
+	const moreFn = text ? asCallable(text.more) : null;
+	const formatMoreLabel = (count: number): string => {
+		if (moreFn && text) {
+			try {
+				const result = moreFn.call(text, count);
+				if (typeof result === "string") {
+					return result;
+				}
+			} catch {
+				// Fall back to "+N more".
+			}
+		}
+		return `+${String(count)} more`;
+	};
+
+	const openMoreFn = asCallable(ctx.openMore);
+	const openMore = (
+		day: number,
+		anchor: HTMLElement,
+		event: MouseEvent | KeyboardEvent,
+	): void => {
+		if (!openMoreFn) {
+			return;
+		}
+		try {
+			openMoreFn.call(ctx, day, anchor, event);
+		} catch (error) {
+			console.warn("Failed to open TaskNotes day popover:", error);
+		}
+	};
+
+	return {
+		dayMaxEvents,
+		order,
+		draggingId,
+		doc,
+		win,
+		formatLongDate,
+		formatItemCount,
+		formatMoreLabel,
+		openMore,
+	};
+}
+
+/**
+ * Triggers TaskNotes' `syncMonthChipControls` helper safely when present on the CalendarView.
+ */
+export function syncCalendarMonthChipControls(rawView: object): void {
+	safeCall(rawView, "syncMonthChipControls");
+}

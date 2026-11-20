@@ -308,7 +308,13 @@ body.tnce-mobile-month-tap
 	#bases-calendar:not(.tn-calendar-composition)
 	.tnc-dg--chips
 	.tnc-dg-dots
-	> .tnc-item--indicator {
+	> .tnc-item--indicator,
+body.tnce-mobile-month-tap
+	.advanced-calendar-view
+	#bases-calendar:not(.tn-calendar-composition)
+	.tnc-dg--chips
+	.tnc-dg-layer
+	.tnc-item--indicator {
 	pointer-events: auto;
 	cursor: var(--cursor-link, pointer);
 }
@@ -318,7 +324,13 @@ body.tnce-mobile-month-tap
 	#bases-calendar:not(.tn-calendar-composition)
 	.tnc-dg--chips
 	.tnc-dg-dots
-	> .tnc-item--indicator:hover {
+	> .tnc-item--indicator:hover,
+body.tnce-mobile-month-tap
+	.advanced-calendar-view
+	#bases-calendar:not(.tn-calendar-composition)
+	.tnc-dg--chips
+	.tnc-dg-layer
+	.tnc-item--indicator:hover {
 	filter: brightness(0.95);
 }
 
@@ -327,7 +339,13 @@ body.tnce-mobile-month-tap
 	#bases-calendar:not(.tn-calendar-composition)
 	.tnc-dg--chips
 	.tnc-dg-dots
-	> .tnc-item--indicator:focus-visible {
+	> .tnc-item--indicator:focus-visible,
+body.tnce-mobile-month-tap
+	.advanced-calendar-view
+	#bases-calendar:not(.tn-calendar-composition)
+	.tnc-dg--chips
+	.tnc-dg-layer
+	.tnc-item--indicator:focus-visible {
 	outline: 2px solid var(--background-modifier-border-focus);
 	outline-offset: -1px;
 }
@@ -353,7 +371,13 @@ body.tnce-month-quick-create
 	.advanced-calendar-view
 	#bases-calendar
 	.tnc-dg
-	.tnc-more {
+	.tnc-more,
+body.tnce-month-quick-create
+	.advanced-calendar-view
+	#bases-calendar
+	.tnc-dg
+	.tnc-dg-layer
+	.tnc-item--indicator {
 	-webkit-touch-callout: none;
 	-webkit-user-select: none;
 	user-select: none;
@@ -758,7 +782,12 @@ body.tnce-vivid-chip-colors
 	.tasknotes-plugin.advanced-calendar-view
 	.tnc-dg--chips
 	.tnc-dg-dots
-	> .tnc-item--indicator {
+	> .tnc-item--indicator,
+body.tnce-vivid-chip-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dg--chips
+	.tnc-dg-layer
+	.tnc-item--indicator {
 	--tnce-chip-raw-color: var(
 		--tnc-border,
 		var(--tnc-c, var(--tn-calendar-status-color, var(--tnc-accent)))
@@ -783,11 +812,24 @@ body.tnce-vivid-chip-colors
 	color: var(--tn-calendar-event-ink, var(--tn-text-normal));
 }
 
+body.tnce-vivid-chip-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dg--chips
+	.tnc-dg-layer
+	.tnc-item--indicator.is-cont-start {
+	border-inline-start-style: dashed;
+}
+
 body.theme-dark.tnce-vivid-chip-colors
 	.tasknotes-plugin.advanced-calendar-view
 	.tnc-dg--chips
 	.tnc-dg-dots
-	> .tnc-item--indicator {
+	> .tnc-item--indicator,
+body.theme-dark.tnce-vivid-chip-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dg--chips
+	.tnc-dg-layer
+	.tnc-item--indicator {
 	--tnce-chip-fill-strength: 38%;
 	--tnce-chip-border-strength: 52%;
 }
@@ -796,7 +838,12 @@ body.tnce-vivid-chip-colors
 	.tasknotes-plugin.advanced-calendar-view
 	.tnc-dg--chips
 	.tnc-dg-dots
-	> .tnc-item--indicator[data-ics-event="true"]:not(.is-completed) {
+	> .tnc-item--indicator[data-ics-event="true"]:not(.is-completed),
+body.tnce-vivid-chip-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dg--chips
+	.tnc-dg-layer
+	.tnc-item--indicator[data-ics-event="true"]:not(.is-completed) {
 	opacity: 1;
 }
 
@@ -804,7 +851,12 @@ body.tnce-vivid-chip-colors
 	.tasknotes-plugin.advanced-calendar-view
 	.tnc-dg--chips
 	.tnc-dg-dots
-	> .tnc-item--indicator.is-completed {
+	> .tnc-item--indicator.is-completed,
+body.tnce-vivid-chip-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dg--chips
+	.tnc-dg-layer
+	.tnc-item--indicator.is-completed {
 	opacity: 0.48;
 }
 
@@ -813,7 +865,12 @@ body.tnce-vivid-chip-colors
 		.tasknotes-plugin.advanced-calendar-view
 		.tnc-dg--chips
 		.tnc-dg-dots
-		> .tnc-item--indicator {
+		> .tnc-item--indicator,
+	body.tnce-vivid-chip-colors
+		.tasknotes-plugin.advanced-calendar-view
+		.tnc-dg--chips
+		.tnc-dg-layer
+		.tnc-item--indicator {
 		--tnce-chip-accent: oklch(
 			from var(--tnce-chip-raw-color) clamp(0.42, l, 0.66) min(c, 0.28) h / 1
 		);
@@ -823,9 +880,95 @@ body.tnce-vivid-chip-colors
 		.tasknotes-plugin.advanced-calendar-view
 		.tnc-dg--chips
 		.tnc-dg-dots
-		> .tnc-item--indicator {
+		> .tnc-item--indicator,
+	body.theme-dark.tnce-vivid-chip-colors
+		.tasknotes-plugin.advanced-calendar-view
+		.tnc-dg--chips
+		.tnc-dg-layer
+		.tnc-item--indicator {
 		--tnce-chip-accent: oklch(
 			from var(--tnce-chip-raw-color) clamp(0.58, l, 0.78) min(c, 0.28) h / 1
 		);
 	}
+}
+
+/* ==========================================================================
+   Phase 8: Spanning Multi-Day Month Chips
+   ========================================================================== */
+
+body.tnce-month-chip-spanning
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dg--chips
+	.tnc-dg-layer
+	.tnc-item--indicator {
+	--tn-calendar-event-fill: color-mix(
+		in oklch,
+		var(--tn-calendar-event-mark) var(--tn-calendar-event-saturation, 18%),
+		var(--tn-bg-primary)
+	);
+	container-type: inline-size;
+	height: var(--tnc-chip-h, 20px);
+	line-height: var(--tnc-chip-h, 20px);
+	border: 0;
+	border-radius: var(--tn-radius-sm, var(--tnc-radius, 4px));
+	padding: 0 3px;
+	background: var(--tn-calendar-event-fill);
+	color: var(--tn-calendar-event-ink, var(--tnc-fg, var(--tnc-text)));
+	font-size: var(--tn-type-2xs, 10px);
+}
+
+body.tnce-month-chip-spanning
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dg--chips
+	.tnc-dg-layer
+	.tnc-item--indicator.is-completed {
+	opacity: 0.4;
+}
+
+body.tnce-month-chip-spanning
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dg--chips
+	.tnc-dg-layer
+	.tnc-item--indicator.is-cont-start {
+	border-top-left-radius: 0;
+	border-bottom-left-radius: 0;
+}
+
+body.tnce-month-chip-spanning
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dg--chips
+	.tnc-dg-layer
+	.tnc-item--indicator.is-cont-end {
+	border-top-right-radius: 0;
+	border-bottom-right-radius: 0;
+}
+
+body.tnce-month-chip-spanning
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dg--chips
+	.tnc-more.tnce-chip-more {
+	height: var(--tnc-chip-h, 20px);
+	min-height: var(--tnc-chip-h, 20px);
+	line-height: var(--tnc-chip-h, 20px);
+	padding: 0 2px;
+	font-size: 10px;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+	display: flex;
+	align-items: center;
+}
+
+body.tnce-month-chip-spanning
+	.tasknotes-plugin.advanced-calendar-view
+	#bases-calendar.tn-calendar-composition
+	.tnc-dg--chips
+	.tnc-dg-layer
+	.tnc-item--indicator,
+body.tnce-month-chip-spanning
+	.tasknotes-plugin.advanced-calendar-view
+	#bases-calendar.tn-calendar-composition
+	.tnc-dg--chips
+	.tnc-more-layer
+	> .tnc-more {
+	pointer-events: none;
 }

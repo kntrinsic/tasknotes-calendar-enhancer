@@ -32,6 +32,7 @@ export interface TaskNotesCalendarEnhancerSettings {
 	calendarColorOverrides: Record<string, string>;
 	enableVividChipColors: boolean;
 	enableMonthChipLimit: boolean;
+	enableMonthChipSpanning: boolean;
 	enableWeekendHolidayColors: boolean;
 	enableJapaneseHolidays: boolean;
 	holidayCalendarKeys: string[];
@@ -45,6 +46,7 @@ type BooleanSettingKey =
 	| "enableCustomCalendarColors"
 	| "enableVividChipColors"
 	| "enableMonthChipLimit"
+	| "enableMonthChipSpanning"
 	| "enableWeekendHolidayColors"
 	| "enableJapaneseHolidays";
 
@@ -57,6 +59,7 @@ export const DEFAULT_SETTINGS: Readonly<TaskNotesCalendarEnhancerSettings> = {
 	calendarColorOverrides: {},
 	enableVividChipColors: true,
 	enableMonthChipLimit: true,
+	enableMonthChipSpanning: true,
 	enableWeekendHolidayColors: true,
 	enableJapaneseHolidays: true,
 	holidayCalendarKeys: [],
@@ -126,6 +129,10 @@ export function normalizeSettings(raw: unknown): TaskNotesCalendarEnhancerSettin
 			typeof record.enableMonthChipLimit === "boolean"
 				? record.enableMonthChipLimit
 				: DEFAULT_SETTINGS.enableMonthChipLimit,
+		enableMonthChipSpanning:
+			typeof record.enableMonthChipSpanning === "boolean"
+				? record.enableMonthChipSpanning
+				: DEFAULT_SETTINGS.enableMonthChipSpanning,
 		enableWeekendHolidayColors:
 			typeof record.enableWeekendHolidayColors === "boolean"
 				? record.enableWeekendHolidayColors
@@ -245,6 +252,19 @@ export class TaskNotesCalendarEnhancerSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.enableMonthChipLimit)
 					.onChange((value) => {
 						this.updateToggleSetting("enableMonthChipLimit", value);
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Span multi-day events in month chips")
+			.setDesc(
+				"Connect multi-day events across consecutive days in narrow month chip view, matching full month view.",
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.enableMonthChipSpanning)
+					.onChange((value) => {
+						this.updateToggleSetting("enableMonthChipSpanning", value);
 					}),
 			);
 

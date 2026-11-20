@@ -3,6 +3,7 @@
 import { type App, TFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	asDayGridView,
 	findToolbarForContainer,
 	formatDayNumber,
 	formatLocalDateString,
@@ -10,6 +11,7 @@ import {
 	getActiveGoogleCalendarService,
 	getBasesLeafContainers,
 	getCacheableCalendarProviders,
+	getCalendarDayGridView,
 	getEnabledProviderCalendarIds,
 	getExternalCalendarSnapshot,
 	getHostedGoogleConnectionState,
@@ -17,10 +19,12 @@ import {
 	getOAuthConnectionGeneration,
 	getTaskNotesPlugin,
 	hasAnyEnabledIcsSubscription,
+	isCalendarDestroyed,
 	isOAuthProviderConnected,
 	openTaskNotesSettings,
 	parseDayNumber,
 	parseLocalDateParts,
+	readDayGridContext,
 	refreshOpenCalendarViews,
 	subscribeExternalCalendarChanges,
 	subscribeHostedGoogleClient,
@@ -823,5 +827,77 @@ describe("tasknotesBridge", () => {
 		expect(formatDayNumber(0)).toBe("1970-01-01");
 		expect(formatDayNumber(Number.NaN)).toBeNull();
 		expect(formatDayNumber(1.5)).toBeNull();
+	});
+
+	it("validates DayGridView instances and reads DayGrid context defensively", () => {
+		const noopPool = {
+			begin: vi.fn(),
+			place: vi.fn(() => document.createElement("div")),
+			end: vi.fn(),
+			clear: vi.fn(),
+		};
+		const dayCell = document.createElement("div");
+		const dotBox = document.createElement("div");
+		const countEl = document.createElement("span");
+		const rowEl = document.createElement("div");
+		const layerEl = document.createElement("div");
+		const moreEl = document.createElement("div");
+		const gridEl = document.createElement("div");
+		const openMore = vi.fn();
+
+		const validGrid = {
+			el: gridEl,
+			weeks: [
+				{
+					days: [20412],
+					row: rowEl,
+					cells: [dayCell],
+					layer: layerEl,
+					more: moreEl,
+					pool: noopPool,
+					dots: [{ box: dotBox, pool: noopPool, count: countEl }],
+				},
+			],
+			ctx: {
+				opts: { dayMaxEvents: 4 },
+				draggingId: "task-1",
+				order: () => -1,
+				fmt: { longDate: (d: number) => `Long:${String(d)}` },
+				text: {
+					itemCount: (n: number) => `${String(n)} events`,
+					more: (n: number) => `+${String(n)} hidden`,
+				},
+				openMore,
+			},
+			render: vi.fn(),
+			renderDots: vi.fn(),
+			itemsFor: vi.fn(() => []),
+		};
+
+		expect(asDayGridView(null)).toBeNull();
+		expect(asDayGridView({ el: gridEl, weeks: [] })).toBeNull();
+		const parsedGrid = asDayGridView(validGrid);
+		expect(parsedGrid).not.toBeNull();
+
+		const liveCalendar = { destroyed: false, current: validGrid };
+		const destroyedCalendar = { destroyed: true, current: validGrid };
+		expect(isCalendarDestroyed(liveCalendar)).toBe(false);
+		expect(isCalendarDestroyed(destroyedCalendar)).toBe(true);
+		expect(getCalendarDayGridView(liveCalendar)).toBe(parsedGrid);
+		expect(getCalendarDayGridView(destroyedCalendar)).toBeNull();
+
+		if (!parsedGrid) {
+			throw new Error("Expected validated DayGridView");
+		}
+		const info = readDayGridContext(parsedGrid);
+		expect(info).not.toBeNull();
+		expect(info?.dayMaxEvents).toBe(4);
+		expect(info?.draggingId).toBe("task-1");
+		expect(info?.formatLongDate(20412)).toBe("Long:20412");
+		expect(info?.formatItemCount(3)).toBe("3 events");
+		expect(info?.formatMoreLabel(2)).toBe("+2 hidden");
+		const clickEv = new MouseEvent("click");
+		info?.openMore(20412, moreEl, clickEv);
+		expect(openMore).toHaveBeenCalledWith(20412, moreEl, clickEv);
 	});
 });

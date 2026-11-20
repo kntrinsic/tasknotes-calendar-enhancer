@@ -597,4 +597,62 @@ describe("MonthDayQuickCreateController", () => {
 		expect(rightClick.defaultPrevented).toBe(false);
 		expect(harness.handleDateSelectSpy).not.toHaveBeenCalled();
 	});
+
+	it("resolves column date under touch long-press on a multi-day spanning chip in .tnc-dg-layer", () => {
+		vi.useFakeTimers();
+		const harness = createQuickCreateHarness({ gridMode: "chips" });
+		const grid = harness.calendarEl.querySelector<HTMLElement>(".tnc-dg");
+		if (!grid) {
+			throw new Error("Expected grid element");
+		}
+
+		// Build a 2-day week row so we can verify pointer X selects column 2 ("2026-11-21")
+		const weekRow = document.createElement("div");
+		weekRow.className = "tnc-dg-week";
+		const dates = document.createElement("div");
+		dates.className = "tnc-dg-dates";
+
+		const cell1 = document.createElement("div");
+		cell1.className = "tnc-dg-day";
+		cell1.dataset.date = "2026-11-20";
+		vi.spyOn(cell1, "getBoundingClientRect").mockReturnValue(
+			new DOMRect(0, 0, 100, 100),
+		);
+
+		const cell2 = document.createElement("div");
+		cell2.className = "tnc-dg-day";
+		cell2.dataset.date = "2026-11-21";
+		vi.spyOn(cell2, "getBoundingClientRect").mockReturnValue(
+			new DOMRect(100, 0, 100, 100),
+		);
+
+		dates.append(cell1, cell2);
+		const layer = document.createElement("div");
+		layer.className = "tnc-dg-layer";
+		const spanningChip = document.createElement("div");
+		spanningChip.className = "tnc-item tnc-item--indicator";
+		spanningChip.dataset.icsEvent = "true";
+		spanningChip.dataset.tnceStartDate = "2026-11-20";
+		layer.appendChild(spanningChip);
+		weekRow.append(dates, layer);
+		grid.replaceChildren(weekRow);
+
+		const controller = new MonthDayQuickCreateController(harness.app);
+		controller.enable();
+
+		spanningChip.dispatchEvent(
+			createTouchPointerEvent("pointerdown", {
+				pointerId: 33,
+				clientX: 150,
+				clientY: 40,
+			}),
+		);
+		vi.advanceTimersByTime(LONG_PRESS_DELAY_MS);
+		expect(harness.handleDateSelectSpy).toHaveBeenCalledTimes(1);
+		expect(
+			(harness.handleDateSelectSpy.mock.calls[0]?.[0] as { startStr: string }).startStr,
+		).toBe("2026-11-21");
+
+		controller.disable();
+	});
 });

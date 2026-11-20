@@ -11,6 +11,7 @@ import {
 } from "./externalCalendarCache";
 import { MobileMonthTapController } from "./mobileMonthTap";
 import { MonthChipLimitController } from "./monthChipLimit";
+import { MonthChipSpanningController } from "./monthChipSpanning";
 import { MonthDayQuickCreateController } from "./monthDayQuickCreate";
 import {
 	DEFAULT_SETTINGS,
@@ -46,6 +47,7 @@ export default class TaskNotesCalendarEnhancerPlugin
 	private toolbarCalendarPicker: ToolbarCalendarPicker | null = null;
 	private mobileMonthTap: MobileMonthTapController | null = null;
 	private monthChipLimit: MonthChipLimitController | null = null;
+	private monthChipSpanning: MonthChipSpanningController | null = null;
 	private monthDayQuickCreate: MonthDayQuickCreateController | null = null;
 	private weekendHolidayHighlighter: WeekendHolidayHighlighter | null = null;
 
@@ -119,6 +121,13 @@ export default class TaskNotesCalendarEnhancerPlugin
 			this.mobileMonthTap.enable();
 		} else {
 			this.mobileMonthTap?.disable();
+		}
+
+		if (this.settings.enableMonthChipSpanning) {
+			this.monthChipSpanning ??= new MonthChipSpanningController(this.app);
+			this.monthChipSpanning.enable();
+		} else {
+			this.monthChipSpanning?.disable();
 		}
 
 		if (this.settings.enableMonthChipLimit) {
@@ -255,6 +264,8 @@ export default class TaskNotesCalendarEnhancerPlugin
 		this.mobileMonthTap = null;
 		this.monthChipLimit?.disable();
 		this.monthChipLimit = null;
+		this.monthChipSpanning?.disable();
+		this.monthChipSpanning = null;
 		this.monthDayQuickCreate?.disable();
 		this.monthDayQuickCreate = null;
 		this.calendarColorOverrides?.disable({ refreshViews: false });

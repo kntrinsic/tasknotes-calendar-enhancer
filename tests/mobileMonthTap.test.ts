@@ -517,4 +517,52 @@ describe("MobileMonthTapController", () => {
 		controlHarness.moreLink?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
 		expect(controlHarness.openMoreSpy).not.toHaveBeenCalled();
 	});
+
+	it("supports empty-space popover tap and layer chip fallback when spanning chips mark data-tnce-has-events", async () => {
+		const harness = createMonthHarness({
+			gridMode: "chips",
+			includeIndicator: false,
+		});
+		// Simulate day cell covered by a multi-day spanning chip rendered in .tnc-dg-layer
+		harness.dayCell.dataset.tnceHasEvents = "true";
+
+		const layer = document.createElement("div");
+		layer.className = "tnc-dg-layer";
+		const layerTaskChip = document.createElement("div");
+		layerTaskChip.className = "tnc-item tnc-item--indicator";
+		layerTaskChip.dataset.taskPath = "TaskNotes/Tasks/spanning.md";
+		layerTaskChip.dataset.tnceStartDate = "2026-11-20";
+		layer.appendChild(layerTaskChip);
+		harness.containerEl.querySelector(".tnc-dg")?.appendChild(layer);
+
+		controller = new MobileMonthTapController(harness.app);
+		controller.enable();
+
+		// Empty space on spanned day opens day popover
+		harness.dayCell.dispatchEvent(
+			new PointerEvent("pointerdown", {
+				bubbles: true,
+				button: 0,
+				pointerId: 30,
+				clientX: 30,
+				clientY: 70,
+			}),
+		);
+		expect(harness.bubblePointerDownSpy).not.toHaveBeenCalled();
+		const dayClick = new MouseEvent("click", { bubbles: true, cancelable: true });
+		harness.dayCell.dispatchEvent(dayClick);
+		expect(harness.openMoreSpy).toHaveBeenCalledWith(
+			parseDayNumber("2026-11-20"),
+			harness.dayCell,
+			dayClick,
+		);
+
+		// Fallback tap on .tnc-dg-layer .tnc-item--indicator opens task modal
+		layerTaskChip.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+		await flushMicrotasks();
+		expect(harness.openTaskEditModalSpy).toHaveBeenCalledWith({
+			path: "TaskNotes/Tasks/spanning.md",
+			title: "Task",
+		});
+	});
 });

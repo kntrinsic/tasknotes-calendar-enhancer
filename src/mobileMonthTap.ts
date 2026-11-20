@@ -78,11 +78,13 @@ function findFallbackDayCell(target: Element): HTMLElement | null {
 	}
 
 	const dayCell = target.closest<HTMLElement>(".tnc-dg-day[data-date]");
-	if (!dayCell || !dayCell.querySelector(".tnc-item--indicator")) {
+	if (!dayCell) {
 		return null;
 	}
-
-	return dayCell;
+	const hasEvents =
+		dayCell.querySelector(".tnc-item--indicator") !== null ||
+		dayCell.dataset.tnceHasEvents === "true";
+	return hasEvents ? dayCell : null;
 }
 
 /**
@@ -261,7 +263,7 @@ export class MobileMonthTapController {
 			}
 
 			const indicatorEl = target.closest<HTMLElement>(
-				".tnc-dg--chips .tnc-dg-dots > .tnc-item--indicator",
+				".tnc-dg--chips .tnc-dg-dots > .tnc-item--indicator, .tnc-dg--chips .tnc-dg-layer .tnc-item--indicator",
 			);
 			if (indicatorEl) {
 				if (entry.handle.hasEngineItemMeta(indicatorEl)) {
@@ -275,8 +277,9 @@ export class MobileMonthTapController {
 					void entry.handle.openTaskFromPath(taskPath);
 					return;
 				}
-				const dateStr = indicatorEl.closest<HTMLElement>(".tnc-dg-day[data-date]")
-					?.dataset.date;
+				const dateStr =
+					indicatorEl.closest<HTMLElement>(".tnc-dg-day[data-date]")?.dataset.date ??
+					indicatorEl.dataset.tnceStartDate;
 				if (dateStr) {
 					entry.handle.openDayMorePopover(dateStr, indicatorEl, event);
 				}

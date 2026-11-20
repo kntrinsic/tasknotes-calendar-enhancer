@@ -21,7 +21,7 @@ Each feature has an independent toggle in **Settings → TaskNotes Calendar Enha
 - Leaves swipes, drag-and-drop, selection mode, `showMonthDayPanel: true`, and long-press quick creation intact.
 
 ### 4. Month View Quick Create (`enableMonthDayQuickCreate`)
-- **Desktop right-click** or **mobile/touch long-press (`480ms`)** on a month day cell opens TaskNotes' native creation menu (`Create task`, `Create timeblock`, `Create time entry`, `Create external calendar event`) across `full`, `chips`, `dots`, `compact`, and `showMonthDayPanel: true`.
+- **Desktop right-click** or **mobile/touch long-press (`480ms`)** on a month day cell (or `+N` overflow control) opens TaskNotes' native creation menu (`Create task`, `Create timeblock`, `Create time entry`, `Create external calendar event`) across `full`, `chips`, `dots`, `compact`, and `showMonthDayPanel: true`.
 - Suppresses post-long-press OS callouts and accidental tap-through popovers while cancelling cleanly on finger movement (`> 10px`), pinch gestures, swipes, or drags.
 
 ### 5. Custom Calendar Colors (`enableCustomCalendarColors`)
@@ -41,6 +41,10 @@ Each feature has an independent toggle in **Settings → TaskNotes Calendar Enha
 ### 8. Month Chip Event Limit (`enableMonthChipLimit`)
 - Caps directly visible events per day at **4** in month `chips` mode so any day with **5 or more** events cleanly shows `+N` overflow (and opens the day's full list popover on `+N` or empty-space tap).
 - Applies only at runtime while `monthDisplay === "chips"` and `view.type === "month"` without modifying `.base` files (`config.set()`), restoring original `dayMaxEvents` settings on desktop `full` view, view switches, disable, or unload.
+
+### 9. Span Multi-Day Events in Month Chips (`enableMonthChipSpanning`)
+- Renders multi-day all-day and timed events as continuous horizontal bars across consecutive days of each week row in month `chips` mode (`560px–850px` / tablets), matching `full` month view while keeping `chips` height, vivid colors, 4-event limit, empty-space day popover taps, and right-click/long-press quick creation intact.
+- Automatically splits cleanly across week boundaries with continuation styling and restores stock day-by-day chips immediately when disabled or unloaded.
 
 ## Installation via BRAT
 

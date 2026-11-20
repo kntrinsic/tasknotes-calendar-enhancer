@@ -105,7 +105,27 @@ function findRightClickTarget(target: Element): MonthCreationTarget | null {
 	return dayCell && dateStr ? { targetEl: dayCell, dateStr } : null;
 }
 
-function findTouchLongPressTarget(target: Element): MonthCreationTarget | null {
+function resolveDateForLayerItem(itemEl: Element, clientX: number): string | null {
+	const weekRow = itemEl.closest(".tnc-dg-week");
+	if (weekRow) {
+		for (const cell of weekRow.querySelectorAll<HTMLElement>(".tnc-dg-day[data-date]")) {
+			const rect = cell.getBoundingClientRect();
+			if (rect.width > 0 && clientX >= rect.left && clientX < rect.right) {
+				const cellDate = cell.dataset.date?.trim();
+				if (cellDate) {
+					return cellDate;
+				}
+			}
+		}
+	}
+	const fallback = (itemEl as HTMLElement).dataset.tnceStartDate?.trim();
+	return fallback && fallback.length > 0 ? fallback : null;
+}
+
+function findTouchLongPressTarget(
+	target: Element,
+	clientX: number,
+): MonthCreationTarget | null {
 	if (!target.closest(".tnc-dg") || target.closest(IGNORED_ANCESTORS_SELECTOR)) {
 		return null;
 	}
@@ -121,9 +141,14 @@ function findTouchLongPressTarget(target: Element): MonthCreationTarget | null {
 	if (itemEl) {
 		const isAllowedChipOrCompactIndicator =
 			Boolean(itemEl.closest(".tnc-dg--chips .tnc-dg-dots > .tnc-item--indicator")) ||
+			Boolean(itemEl.closest(".tnc-dg--chips .tnc-dg-layer .tnc-item--indicator")) ||
 			Boolean(itemEl.closest(".tnc-dg--compact"));
 		if (!isAllowedChipOrCompactIndicator) {
 			return null;
+		}
+		if (itemEl.closest(".tnc-dg--chips .tnc-dg-layer")) {
+			const layerDate = resolveDateForLayerItem(itemEl, clientX);
+			return layerDate ? { targetEl: itemEl as HTMLElement, dateStr: layerDate } : null;
 		}
 	}
 
@@ -334,7 +359,7 @@ export class MonthDayQuickCreateController {
 				return;
 			}
 
-			const creationTarget = findTouchLongPressTarget(target);
+			const creationTarget = findTouchLongPressTarget(target, event.clientX);
 			if (!creationTarget) {
 				return;
 			}
