@@ -2,9 +2,34 @@ export interface EventRef {
 	readonly id: string;
 }
 
+export class TFile {
+	path = "";
+	extension = "md";
+}
+
+export class Vault {
+	getAbstractFileByPath(_path: string): TFile | null {
+		return null;
+	}
+}
+
+export class WorkspaceLeaf {
+	openFile(_file: TFile): Promise<void> {
+		return Promise.resolve();
+	}
+}
+
 export class Workspace {
 	getLeavesOfType(_viewType: string): unknown[] {
 		return [];
+	}
+
+	getLeaf(_newLeaf?: boolean): WorkspaceLeaf {
+		return new WorkspaceLeaf();
+	}
+
+	openLinkText(_linktext: string, _sourcePath: string, _newLeaf?: boolean): Promise<void> {
+		return Promise.resolve();
 	}
 
 	on(_name: string, _callback: (...args: unknown[]) => unknown): EventRef {
@@ -19,7 +44,7 @@ export class Workspace {
 }
 
 export class App {
-	readonly vault = {};
+	readonly vault = new Vault();
 	readonly workspace = new Workspace();
 }
 

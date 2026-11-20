@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 
-import type { App } from "obsidian";
+import { type App, TFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	findToolbarForContainer,
@@ -9,6 +9,7 @@ import {
 	getExternalCalendarSnapshot,
 	getTaskNotesPlugin,
 	openTaskNotesSettings,
+	parseDayNumber,
 	subscribeExternalCalendarChanges,
 } from "../src/tasknotesBridge";
 
@@ -21,6 +22,8 @@ interface MockLeafSpec {
 	readEventToggles?: () => void;
 	refresh?: () => void;
 	refetchEvents?: () => Promise<void>;
+	viewOptions?: Record<string, unknown>;
+	calendar?: Record<string, unknown>;
 }
 
 function createBasesDom(connected = true): {
@@ -46,6 +49,8 @@ function createMockApp(options: {
 	tasknotes?: unknown;
 	leaves?: MockLeafSpec[];
 	setting?: Record<string, unknown>;
+	vaultFiles?: Map<string, TFile>;
+	openFileSpy?: (file: TFile) => Promise<void>;
 }): App {
 	const leaves = (options.leaves ?? []).map((spec) => ({
 		view: {
@@ -63,6 +68,8 @@ function createMockApp(options: {
 							readEventToggles: spec.readEventToggles,
 							refresh: spec.refresh,
 							refetchEvents: spec.refetchEvents,
+							viewOptions: spec.viewOptions,
+							calendar: spec.calendar,
 						},
 					}
 				: undefined,
@@ -74,9 +81,16 @@ function createMockApp(options: {
 			plugins:
 				options.tasknotes === undefined ? {} : { tasknotes: options.tasknotes },
 		},
+		vault: {
+			getAbstractFileByPath: (filePath: string) =>
+				options.vaultFiles?.get(filePath) ?? null,
+		},
 		workspace: {
 			getLeavesOfType: (viewType: string) =>
 				viewType === "bases" ? leaves : [],
+			getLeaf: () => ({
+				openFile: options.openFileSpy ?? (() => Promise.resolve()),
+			}),
 		},
 		setting: options.setting,
 	} as unknown as App;
@@ -328,5 +342,109 @@ describe("tasknotesBridge", () => {
 		expect(open).toHaveBeenCalledTimes(1);
 		expect(openTabById).toHaveBeenCalledWith("tasknotes");
 		expect(openTaskNotesSettings(createMockApp({}))).toBe(false);
+	});
+
+	it("parses valid ISO dates into UTC epoch day numbers and rejects invalid dates", () => {
+		expect(parseDayNumber("1970-01-01")).toBe(0);
+		expect(parseDayNumber("2024-02-29")).toBe(
+			Math.floor(Date.UTC(2024, 1, 29) / 86_400_000),
+		);
+		expect(parseDayNumber("2026-11-20")).toBe(
+			Math.floor(Date.UTC(2026, 10, 20) / 86_400_000),
+		);
+		expect(parseDayNumber("2026-02-31")).toBeNull();
+		expect(parseDayNumber("2026-13-01")).toBeNull();
+		expect(parseDayNumber("")).toBeNull();
+		expect(parseDayNumber("not-a-date")).toBeNull();
+	});
+
+	it("exposes month-tap state helpers, openDayMorePopover, and openTaskFromPath", async () => {
+		const dom = createBasesDom(true);
+		const chipEl = document.createElement("div");
+		const meta = new WeakMap<HTMLElement, unknown>([[chipEl, { id: "1" }]]);
+		const openMore = vi.fn();
+		const openTaskEditModal = vi.fn();
+		const openFileSpy = vi.fn(() => Promise.resolve());
+		const taskFile = new TFile();
+		taskFile.path = "TaskNotes/Tasks/demo.md";
+		taskFile.extension = "md";
+
+		let singleClickAction = "edit";
+		let selectionActive = false;
+
+		const app = createMockApp({
+			tasknotes: {
+				settings: {
+					get singleClickAction() {
+						return singleClickAction;
+					},
+				},
+				taskSelectionService: {
+					isSelectionModeActive: () => selectionActive,
+				},
+				cacheManager: {
+					getTaskInfo: (taskPath: string) =>
+						Promise.resolve(
+							taskPath === taskFile.path ? { path: taskPath, title: "Demo" } : null,
+						),
+				},
+				openTaskEditModal,
+			},
+			vaultFiles: new Map([[taskFile.path, taskFile]]),
+			openFileSpy,
+			leaves: [
+				{
+					viewType: "bases",
+					controllerViewType: "tasknotesCalendar",
+					containerEl: dom.containerEl,
+					configGet: () => undefined,
+					configSet: vi.fn(),
+					viewOptions: { showMonthDayPanel: false },
+					calendar: {
+						meta,
+						session: { active: false },
+						openMore,
+					},
+				},
+			],
+		});
+
+		const [handle] = getActiveCalendarViews(app);
+		expect(handle).toBeDefined();
+		expect(handle?.isMonthDayPanelEnabled()).toBe(false);
+		expect(handle?.isSelectionModeActive()).toBe(false);
+		selectionActive = true;
+		expect(handle?.isSelectionModeActive()).toBe(true);
+		selectionActive = false;
+
+		expect(handle?.isCalendarEngineDragging()).toBe(false);
+		const draggingEl = document.createElement("div");
+		draggingEl.className = "tnc-dragging";
+		dom.containerEl.appendChild(draggingEl);
+		expect(handle?.isCalendarEngineDragging()).toBe(true);
+		draggingEl.remove();
+
+		expect(handle?.hasEngineItemMeta(chipEl)).toBe(true);
+		expect(handle?.hasEngineItemMeta(document.createElement("div"))).toBe(false);
+
+		const clickEvent = new MouseEvent("click");
+		expect(handle?.openDayMorePopover("2026-11-20", chipEl, clickEvent)).toBe(true);
+		expect(openMore).toHaveBeenCalledWith(
+			Math.floor(Date.UTC(2026, 10, 20) / 86_400_000),
+			chipEl,
+			clickEvent,
+		);
+		expect(handle?.openDayMorePopover("invalid", chipEl, clickEvent)).toBe(false);
+
+		expect(await handle?.openTaskFromPath(taskFile.path)).toBe(true);
+		expect(openTaskEditModal).toHaveBeenCalledWith({
+			path: taskFile.path,
+			title: "Demo",
+		});
+
+		singleClickAction = "openNote";
+		expect(await handle?.openTaskFromPath(taskFile.path)).toBe(true);
+		expect(openFileSpy).toHaveBeenCalledWith(taskFile);
+		expect(await handle?.openTaskFromPath("TaskNotes/Tasks/missing.md")).toBe(false);
 	});
 });

@@ -1,4 +1,34 @@
-import type { App } from "obsidian";
+import { type App, TFile } from "obsidian";
+
+const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const MS_PER_DAY = 86_400_000;
+
+/**
+ * Parses a YYYY-MM-DD date string into the UTC epoch day number expected by `@tasknotes/calendar`.
+ */
+export function parseDayNumber(dateStr: string): number | null {
+	const match = ISO_DATE_PATTERN.exec(dateStr.trim());
+	if (!match) {
+		return null;
+	}
+	const year = Number(match[1]);
+	const month = Number(match[2]);
+	const day = Number(match[3]);
+	if (month < 1 || month > 12 || day < 1 || day > 31) {
+		return null;
+	}
+	const date = new Date(0);
+	date.setUTCFullYear(year, month - 1, day);
+	date.setUTCHours(0, 0, 0, 0);
+	if (
+		date.getUTCFullYear() !== year ||
+		date.getUTCMonth() !== month - 1 ||
+		date.getUTCDate() !== day
+	) {
+		return null;
+	}
+	return Math.floor(date.getTime() / MS_PER_DAY);
+}
 
 export type ExternalCalendarProviderId = "google" | "microsoft" | "ics";
 
@@ -36,6 +66,16 @@ export interface CalendarViewHandle {
 	readonly toolbarEl: HTMLElement | null;
 	getBooleanConfig(key: string, fallback: boolean): boolean;
 	setCalendarToggle(key: string, visible: boolean): boolean;
+	isMonthDayPanelEnabled(): boolean;
+	isSelectionModeActive(): boolean;
+	isCalendarEngineDragging(): boolean;
+	hasEngineItemMeta(el: HTMLElement): boolean;
+	openDayMorePopover(
+		dateStr: string,
+		anchorEl: HTMLElement,
+		event: MouseEvent | KeyboardEvent,
+	): boolean;
+	openTaskFromPath(taskPath: string): Promise<boolean>;
 }
 
 type DynamicCallable = (...args: unknown[]) => unknown;
@@ -147,6 +187,7 @@ export function getBasesLeafContainers(app: App): HTMLElement[] {
 }
 
 function createCalendarViewHandle(
+	app: App,
 	innerView: Record<string, unknown>,
 	containerEl: HTMLElement,
 	config: Record<string, unknown>,
@@ -188,12 +229,158 @@ function createCalendarViewHandle(
 		return true;
 	};
 
+	const isMonthDayPanelEnabled = (): boolean => {
+		try {
+			if (
+				isRecord(innerView.viewOptions) &&
+				innerView.viewOptions.showMonthDayPanel === true
+			) {
+				return true;
+			}
+			return containerEl.querySelector(".tn-calendar-composition") !== null;
+		} catch {
+			return false;
+		}
+	};
+
+	const isSelectionModeActive = (): boolean => {
+		try {
+			const tasknotes = getTaskNotesPlugin(app);
+			if (
+				tasknotes &&
+				safeCall(tasknotes.taskSelectionService, "isSelectionModeActive") === true
+			) {
+				return true;
+			}
+			return (
+				containerEl.querySelector(".tn-selection-mode") !== null ||
+				containerEl.closest(".tn-selection-mode") !== null
+			);
+		} catch {
+			return false;
+		}
+	};
+
+	const isCalendarEngineDragging = (): boolean => {
+		try {
+			if (containerEl.querySelector(".tnc-dragging") !== null) {
+				return true;
+			}
+			const calendar = innerView.calendar;
+			return (
+				isRecord(calendar) &&
+				isRecord(calendar.session) &&
+				calendar.session.active === true
+			);
+		} catch {
+			return false;
+		}
+	};
+
+	const hasEngineItemMeta = (el: HTMLElement): boolean => {
+		try {
+			const calendar = innerView.calendar;
+			if (!isRecord(calendar)) {
+				return false;
+			}
+			return safeCall(calendar.meta, "has", el) === true;
+		} catch {
+			return false;
+		}
+	};
+
+	const openDayMorePopover = (
+		dateStr: string,
+		anchorEl: HTMLElement,
+		event: MouseEvent | KeyboardEvent,
+	): boolean => {
+		const day = parseDayNumber(dateStr);
+		if (day === null) {
+			return false;
+		}
+		const calendar = innerView.calendar;
+		if (!isRecord(calendar)) {
+			return false;
+		}
+		const openMoreFn = asCallable(calendar.openMore);
+		if (!openMoreFn) {
+			return false;
+		}
+		try {
+			openMoreFn.call(calendar, day, anchorEl, event);
+			return true;
+		} catch (error) {
+			console.warn("Failed to open TaskNotes day popover:", error);
+			return false;
+		}
+	};
+
+	const openTaskFromPath = async (taskPath: string): Promise<boolean> => {
+		if (!taskPath) {
+			return false;
+		}
+		const tasknotes = getTaskNotesPlugin(app);
+		if (!tasknotes) {
+			return false;
+		}
+		try {
+			const cacheManager = tasknotes.cacheManager;
+			if (!isRecord(cacheManager) || !asCallable(cacheManager.getTaskInfo)) {
+				return false;
+			}
+			const task = await Promise.resolve(safeCall(cacheManager, "getTaskInfo", taskPath));
+			if (!isRecord(task)) {
+				return false;
+			}
+
+			const singleClickAction =
+				isRecord(tasknotes.settings) &&
+				typeof tasknotes.settings.singleClickAction === "string"
+					? tasknotes.settings.singleClickAction
+					: "edit";
+
+			if (singleClickAction === "openNote") {
+				const vault = app.vault as unknown as Record<string, unknown>;
+				const file = safeCall(vault, "getAbstractFileByPath", taskPath);
+				const workspace = app.workspace as unknown as Record<string, unknown>;
+				if (file instanceof TFile) {
+					const leaf = safeCall(workspace, "getLeaf", false);
+					if (isRecord(leaf) && asCallable(leaf.openFile)) {
+						await Promise.resolve(safeCall(leaf, "openFile", file));
+						return true;
+					}
+				}
+				if (asCallable(workspace.openLinkText)) {
+					await Promise.resolve(safeCall(workspace, "openLinkText", taskPath, "", false));
+					return true;
+				}
+				return false;
+			}
+
+			const openEditFn = asCallable(tasknotes.openTaskEditModal);
+			if (!openEditFn) {
+				return false;
+			}
+			openEditFn.call(tasknotes, task);
+			return true;
+		} catch (error) {
+			console.warn("Failed to open task detail from month tap:", error);
+			return false;
+		}
+	};
+
 	return {
 		rawView: innerView,
 		containerEl,
 		toolbarEl: findToolbarForContainer(containerEl),
 		getBooleanConfig,
 		setCalendarToggle,
+		isMonthDayPanelEnabled,
+		isSelectionModeActive,
+		isCalendarEngineDragging,
+		hasEngineItemMeta,
+		openDayMorePopover,
+		openTaskFromPath,
 	};
 }
 
@@ -237,7 +424,7 @@ export function getActiveCalendarViews(app: App): CalendarViewHandle[] {
 			if (!containerEl) {
 				continue;
 			}
-			handles.push(createCalendarViewHandle(innerView, containerEl, config));
+			handles.push(createCalendarViewHandle(app, innerView, containerEl, config));
 		}
 	} catch (error) {
 		console.warn("Failed to inspect active Bases calendar views:", error);
