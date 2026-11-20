@@ -8,12 +8,14 @@ export interface TaskNotesCalendarEnhancerSettings {
 	enableToolbarCalendarPicker: boolean;
 	enableExternalCalendarCache: boolean;
 	enableMobileMonthTap: boolean;
+	enableMonthDayQuickCreate: boolean;
 }
 
 export const DEFAULT_SETTINGS: Readonly<TaskNotesCalendarEnhancerSettings> = {
 	enableToolbarCalendarPicker: true,
 	enableExternalCalendarCache: true,
 	enableMobileMonthTap: true,
+	enableMonthDayQuickCreate: true,
 };
 
 /**
@@ -48,6 +50,10 @@ export function normalizeSettings(raw: unknown): TaskNotesCalendarEnhancerSettin
 			typeof record.enableMobileMonthTap === "boolean"
 				? record.enableMobileMonthTap
 				: DEFAULT_SETTINGS.enableMobileMonthTap,
+		enableMonthDayQuickCreate:
+			typeof record.enableMonthDayQuickCreate === "boolean"
+				? record.enableMonthDayQuickCreate
+				: DEFAULT_SETTINGS.enableMonthDayQuickCreate,
 	};
 }
 
@@ -100,6 +106,19 @@ export class TaskNotesCalendarEnhancerSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.enableMobileMonthTap)
 					.onChange((value) => {
 						this.updateToggleSetting("enableMobileMonthTap", value);
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Month view quick create (right-click / long-press)")
+			.setDesc(
+				"Right-click (desktop) or long-press (mobile) a day cell in month view to open TaskNotes' creation menu.",
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.enableMonthDayQuickCreate)
+					.onChange((value) => {
+						this.updateToggleSetting("enableMonthDayQuickCreate", value);
 					}),
 			);
 

@@ -4,6 +4,7 @@ import {
 	ExternalCalendarCacheController,
 } from "./externalCalendarCache";
 import { MobileMonthTapController } from "./mobileMonthTap";
+import { MonthDayQuickCreateController } from "./monthDayQuickCreate";
 import {
 	DEFAULT_SETTINGS,
 	normalizeSettings,
@@ -25,6 +26,7 @@ export default class TaskNotesCalendarEnhancerPlugin
 	private externalCalendarCache: ExternalCalendarCacheController | null = null;
 	private toolbarCalendarPicker: ToolbarCalendarPicker | null = null;
 	private mobileMonthTap: MobileMonthTapController | null = null;
+	private monthDayQuickCreate: MonthDayQuickCreateController | null = null;
 
 	async onload(): Promise<void> {
 		this.isLoaded = true;
@@ -74,6 +76,13 @@ export default class TaskNotesCalendarEnhancerPlugin
 		} else {
 			this.mobileMonthTap?.disable();
 		}
+
+		if (this.settings.enableMonthDayQuickCreate) {
+			this.monthDayQuickCreate ??= new MonthDayQuickCreateController(this.app);
+			this.monthDayQuickCreate.enable();
+		} else {
+			this.monthDayQuickCreate?.disable();
+		}
 	}
 
 	clearCalendarCache(): Promise<void> {
@@ -88,6 +97,8 @@ export default class TaskNotesCalendarEnhancerPlugin
 		this.toolbarCalendarPicker = null;
 		this.mobileMonthTap?.disable();
 		this.mobileMonthTap = null;
+		this.monthDayQuickCreate?.disable();
+		this.monthDayQuickCreate = null;
 		this.externalCalendarCache?.disable();
 		this.externalCalendarCache = null;
 	}
