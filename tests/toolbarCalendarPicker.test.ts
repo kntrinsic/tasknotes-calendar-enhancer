@@ -460,14 +460,24 @@ describe("ToolbarCalendarPicker", () => {
 		const toggleBtn = harness.toolbarEl.querySelector<HTMLButtonElement>(
 			".tnce-calendar-toggle-button",
 		);
+		const toggleWrapper = harness.toolbarEl.querySelector<HTMLElement>(
+			`.${TOOLBAR_BUTTON_WRAPPER_CLASS}`,
+		);
 		expect(toggleBtn).not.toBeNull();
 		const focusSpy = vi.spyOn(toggleBtn as HTMLButtonElement, "focus");
 
 		toggleBtn?.click();
-		expect(document.body.querySelector(`.${POPOVER_CLASS}`)).not.toBeNull();
+		const openedPopover = document.body.querySelector(`.${POPOVER_CLASS}`);
+		expect(openedPopover).not.toBeNull();
+		expect(openedPopover?.classList.contains("menu")).toBe(true);
+		expect(toggleWrapper?.classList.contains("has-active-menu")).toBe(true);
+		expect(toggleBtn?.classList.contains("has-active-menu")).toBe(true);
+		expect(toggleBtn?.getAttribute("aria-expanded")).toBe("true");
 
 		document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 		expect(document.body.querySelector(`.${POPOVER_CLASS}`)).toBeNull();
+		expect(toggleWrapper?.classList.contains("has-active-menu")).toBe(false);
+		expect(toggleBtn?.classList.contains("has-active-menu")).toBe(false);
 		expect(toggleBtn?.getAttribute("aria-expanded")).toBe("false");
 		expect(focusSpy).toHaveBeenCalledTimes(1);
 

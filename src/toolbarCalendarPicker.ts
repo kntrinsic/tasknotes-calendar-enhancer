@@ -423,7 +423,7 @@ export class ToolbarCalendarPicker {
 		const snapshot = getExternalCalendarSnapshot(this.app);
 
 		const popoverEl = doc.createElement("div");
-		popoverEl.className = POPOVER_CLASS;
+		popoverEl.className = `menu ${POPOVER_CLASS}`;
 		popoverEl.setAttribute("role", "dialog");
 		popoverEl.setAttribute("aria-label", "Toggle calendars");
 		popoverEl.style.position = "fixed";
@@ -597,6 +597,8 @@ export class ToolbarCalendarPicker {
 
 		doc.body.appendChild(popoverEl);
 		this.positionPopover(popoverEl, entry.buttonEl, win);
+		entry.wrapperEl.classList.add("has-active-menu");
+		entry.buttonEl.classList.add("has-active-menu");
 		entry.buttonEl.setAttribute("aria-expanded", "true");
 
 		const onPointerDown = (event: Event): void => {
@@ -643,6 +645,8 @@ export class ToolbarCalendarPicker {
 				doc.removeEventListener("keydown", onKeyDown, true);
 				win.removeEventListener("resize", onResize);
 				popoverEl.remove();
+				entry.wrapperEl.classList.remove("has-active-menu");
+				entry.buttonEl.classList.remove("has-active-menu");
 				entry.buttonEl.setAttribute("aria-expanded", "false");
 			},
 		};
