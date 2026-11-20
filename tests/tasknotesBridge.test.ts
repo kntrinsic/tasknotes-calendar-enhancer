@@ -6,11 +6,20 @@ import {
 	findToolbarForContainer,
 	getActiveCalendarViews,
 	getBasesLeafContainers,
+	getCacheableCalendarProviders,
+	getEnabledProviderCalendarIds,
 	getExternalCalendarSnapshot,
+	getHostedGoogleConnectionState,
+	getOAuthConnectionGeneration,
 	getTaskNotesPlugin,
+	hasAnyEnabledIcsSubscription,
+	isOAuthProviderConnected,
 	openTaskNotesSettings,
 	parseDayNumber,
+	refreshOpenCalendarViews,
 	subscribeExternalCalendarChanges,
+	subscribeHostedGoogleClient,
+	subscribeSingleProviderEvent,
 } from "../src/tasknotesBridge";
 
 interface MockLeafSpec {
@@ -446,5 +455,199 @@ describe("tasknotesBridge", () => {
 		expect(await handle?.openTaskFromPath(taskFile.path)).toBe(true);
 		expect(openFileSpy).toHaveBeenCalledWith(taskFile);
 		expect(await handle?.openTaskFromPath("TaskNotes/Tasks/missing.md")).toBe(false);
+	});
+
+	it("discovers cacheable external calendar providers without duplicating aliased google services", () => {
+		const icsService = { getSubscriptions: () => [], getAllEvents: () => [] };
+		const hostedGoogle = {
+			isSignedIn: () => true,
+			isConnected: () => true,
+			getAvailableCalendars: () => [],
+			getAllEvents: () => [],
+			client: { getSnapshot: () => ({ sessionId: "s1", connection: { status: "active" } }) },
+		};
+		const ownGoogle = { getAvailableCalendars: () => [], getAllEvents: () => [] };
+		const microsoft = { getAvailableCalendars: () => [], getAllEvents: () => [] };
+
+		const app = createMockApp({
+			tasknotes: {
+				icsSubscriptionService: icsService,
+				hostedGoogleCalendarService: hostedGoogle,
+				ownGoogleCalendarService: ownGoogle,
+				googleCalendarService: hostedGoogle, // alias pointing to hosted
+				microsoftCalendarService: microsoft,
+			},
+		});
+
+		const targets = getCacheableCalendarProviders(app);
+		expect(targets.map((t) => [t.key, t.kind])).toEqual([
+			["ics", "ics"],
+			["hosted-google", "oauth-calendar"],
+			["own-google", "oauth-calendar"],
+			["microsoft", "oauth-calendar"],
+		]);
+		expect(targets[1]?.service).toBe(hostedGoogle);
+	});
+
+	it("supports fallback googleCalendarService when distinct from own/hosted properties", () => {
+		const fallbackGoogle = { getAvailableCalendars: () => [], getAllEvents: () => [] };
+		const app = createMockApp({
+			tasknotes: {
+				googleCalendarService: fallbackGoogle,
+			},
+		});
+
+		const targets = getCacheableCalendarProviders(app);
+		expect(targets).toHaveLength(1);
+		expect(targets[0]?.key).toBe("own-google");
+		expect(targets[0]?.service).toBe(fallbackGoogle);
+	});
+
+	it("reads enabled calendar filters respecting TaskNotes empty-array-means-all semantics", () => {
+		const app = createMockApp({
+			tasknotes: {
+				settings: {
+					enabledGoogleCalendars: [],
+					enabledMicrosoftCalendars: ["ms-1", "", "ms-2"],
+				},
+				hostedGoogleCalendarService: {
+					client: {
+						getSnapshot: () => ({ selected: ["hg-1"] }),
+					},
+				},
+			},
+		});
+
+		expect(getEnabledProviderCalendarIds(app, "own-google")).toBeNull();
+		expect(getEnabledProviderCalendarIds(app, "microsoft")).toEqual(["ms-1", "ms-2"]);
+		expect(getEnabledProviderCalendarIds(app, "hosted-google")).toEqual(["hg-1"]);
+		expect(getEnabledProviderCalendarIds(app, "ics")).toBeNull();
+	});
+
+	it("evaluates ICS enabled subscription status safely from service or settings", () => {
+		const serviceWithDisabled = {
+			getSubscriptions: () => [{ id: "sub1", enabled: false }],
+		};
+		const serviceBeforeInit = { getSubscriptions: () => [] };
+		const app = createMockApp({
+			tasknotes: {
+				settings: {
+					icsSubscriptions: [{ id: "sub2", enabled: true }],
+				},
+			},
+		});
+
+		expect(hasAnyEnabledIcsSubscription(app, serviceWithDisabled)).toBe(false);
+		expect(hasAnyEnabledIcsSubscription(app, serviceBeforeInit)).toBe(true);
+	});
+
+	it("reads OAuth connection state and generation counters defensively", async () => {
+		const app = createMockApp({
+			tasknotes: {
+				oauthService: {
+					isConnected: (provider: string) => Promise.resolve(provider === "google"),
+					getConnectionGeneration: (provider: string) =>
+						provider === "google" ? 3 : "invalid",
+				},
+			},
+		});
+
+		expect(await isOAuthProviderConnected(app, "google")).toBe(true);
+		expect(await isOAuthProviderConnected(app, "microsoft")).toBe(false);
+		expect(getOAuthConnectionGeneration(app, "google")).toBe(3);
+		expect(getOAuthConnectionGeneration(app, "microsoft")).toBeNull();
+
+		const appMissing = createMockApp({ tasknotes: {} });
+		expect(await isOAuthProviderConnected(appMissing, "google")).toBeNull();
+		expect(getOAuthConnectionGeneration(appMissing, "google")).toBeNull();
+	});
+
+	it("reads Hosted Google state, subscribes to client updates, and refreshes open calendar views", () => {
+		const pendingHosted = {
+			isSignedIn: () => false,
+			isConnected: () => false,
+			client: {
+				getSnapshot: () => ({ sessionId: null, connection: null, failure: null }),
+			},
+		};
+		expect(getHostedGoogleConnectionState(pendingHosted)).toEqual({
+			signedIn: false,
+			connected: false,
+			settled: false,
+			hasFailure: false,
+		});
+
+		const clientSubscribers = new Set<() => void>();
+		const clientUnsub = vi.fn();
+		const activeHosted = {
+			isSignedIn: () => true,
+			isConnected: () => true,
+			client: {
+				getSnapshot: () => ({
+					sessionId: "sess-1",
+					connection: { status: "active" },
+					failure: null,
+				}),
+				subscribe: (cb: () => void) => {
+					clientSubscribers.add(cb);
+					return clientUnsub;
+				},
+			},
+		};
+		expect(getHostedGoogleConnectionState(activeHosted)).toEqual({
+			signedIn: true,
+			connected: true,
+			settled: true,
+			hasFailure: false,
+		});
+
+		const onClientChange = vi.fn();
+		const disposeClient = subscribeHostedGoogleClient(activeHosted, onClientChange);
+		expect(disposeClient).not.toBeNull();
+		for (const cb of clientSubscribers) {
+			cb();
+		}
+		expect(onClientChange).toHaveBeenCalledTimes(1);
+		disposeClient?.();
+		disposeClient?.();
+		expect(clientUnsub).toHaveBeenCalledTimes(1);
+
+		const providerUnsub = vi.fn();
+		const providerSubscribers = new Set<() => void>();
+		const provider = {
+			on: (_event: string, cb: () => void) => {
+				providerSubscribers.add(cb);
+				return providerUnsub;
+			},
+		};
+		const onProviderEvent = vi.fn();
+		const disposeProvider = subscribeSingleProviderEvent(
+			provider,
+			"data-changed",
+			onProviderEvent,
+		);
+		for (const cb of providerSubscribers) {
+			cb();
+		}
+		expect(onProviderEvent).toHaveBeenCalledTimes(1);
+		disposeProvider?.();
+		expect(providerUnsub).toHaveBeenCalledTimes(1);
+
+		const dom = createBasesDom();
+		const refetchEvents = vi.fn(() => Promise.resolve());
+		const app = createMockApp({
+			leaves: [
+				{
+					viewType: "bases",
+					controllerViewType: "tasknotesCalendar",
+					containerEl: dom.containerEl,
+					configGet: () => undefined,
+					configSet: vi.fn(),
+					refetchEvents,
+				},
+			],
+		});
+		refreshOpenCalendarViews(app);
+		expect(refetchEvents).toHaveBeenCalledTimes(1);
 	});
 });

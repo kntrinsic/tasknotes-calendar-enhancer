@@ -80,11 +80,11 @@ export interface CalendarViewHandle {
 
 type DynamicCallable = (...args: unknown[]) => unknown;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
+export function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function asCallable(value: unknown): DynamicCallable | null {
+export function asCallable(value: unknown): DynamicCallable | null {
 	return typeof value === "function" ? (value as DynamicCallable) : null;
 }
 
@@ -100,7 +100,7 @@ function isElementLike(value: unknown): value is HTMLElement {
 	);
 }
 
-function safeCall(target: unknown, methodName: string, ...args: unknown[]): unknown {
+export function safeCall(target: unknown, methodName: string, ...args: unknown[]): unknown {
 	if (!isRecord(target)) {
 		return undefined;
 	}
@@ -716,5 +716,287 @@ export function openTaskNotesSettings(app: App): boolean {
 		return true;
 	} catch {
 		return false;
+	}
+}
+
+export type CacheableProviderKey =
+	| "ics"
+	| "hosted-google"
+	| "own-google"
+	| "microsoft";
+
+export interface CacheableProviderTarget {
+	key: CacheableProviderKey;
+	service: Record<string, unknown>;
+	kind: "ics" | "oauth-calendar";
+}
+
+export interface HostedGoogleConnectionState {
+	signedIn: boolean;
+	connected: boolean;
+	settled: boolean;
+	hasFailure: boolean;
+}
+
+/**
+ * Returns TaskNotes external calendar providers eligible for startup local caching.
+ */
+export function getCacheableCalendarProviders(app: App): CacheableProviderTarget[] {
+	const tasknotes = getTaskNotesPlugin(app);
+	if (!tasknotes) {
+		return [];
+	}
+
+	const targets: CacheableProviderTarget[] = [];
+	const seenServices = new Set<Record<string, unknown>>();
+	const seenKeys = new Set<CacheableProviderKey>();
+
+	const addTarget = (
+		key: CacheableProviderKey,
+		candidate: unknown,
+		kind: "ics" | "oauth-calendar",
+	): void => {
+		if (!isRecord(candidate) || seenServices.has(candidate) || seenKeys.has(key)) {
+			return;
+		}
+		seenServices.add(candidate);
+		seenKeys.add(key);
+		targets.push({ key, service: candidate, kind });
+	};
+
+	addTarget("ics", tasknotes.icsSubscriptionService, "ics");
+	addTarget("hosted-google", tasknotes.hostedGoogleCalendarService, "oauth-calendar");
+	addTarget("own-google", tasknotes.ownGoogleCalendarService, "oauth-calendar");
+	addTarget("microsoft", tasknotes.microsoftCalendarService, "oauth-calendar");
+
+	const activeGoogle = tasknotes.googleCalendarService;
+	if (isRecord(activeGoogle) && !seenServices.has(activeGoogle)) {
+		const fallbackKey: CacheableProviderKey = isRecord(activeGoogle.client)
+			? "hosted-google"
+			: "own-google";
+		addTarget(fallbackKey, activeGoogle, "oauth-calendar");
+	}
+
+	return targets;
+}
+
+/**
+ * Returns explicitly configured enabled calendar IDs, or null when all calendars should be shown.
+ * TaskNotes treats an empty `enabledGoogleCalendars` / `enabledMicrosoftCalendars` array as "all".
+ */
+export function getEnabledProviderCalendarIds(
+	app: App,
+	providerKey: CacheableProviderKey,
+): string[] | null {
+	const tasknotes = getTaskNotesPlugin(app);
+	if (!tasknotes) {
+		return null;
+	}
+
+	if (providerKey === "hosted-google") {
+		const hosted = tasknotes.hostedGoogleCalendarService;
+		if (isRecord(hosted) && isRecord(hosted.client)) {
+			const snapshot = safeCall(hosted.client, "getSnapshot");
+			if (isRecord(snapshot) && Array.isArray(snapshot.selected)) {
+				const selectedIds = snapshot.selected.filter(
+					(id): id is string => typeof id === "string" && id.length > 0,
+				);
+				return selectedIds.length > 0 ? selectedIds : null;
+			}
+		}
+		return null;
+	}
+
+	if (providerKey === "ics") {
+		return null;
+	}
+
+	const settings = tasknotes.settings;
+	if (!isRecord(settings)) {
+		return null;
+	}
+
+	const rawList =
+		providerKey === "own-google"
+			? settings.enabledGoogleCalendars
+			: settings.enabledMicrosoftCalendars;
+	if (!Array.isArray(rawList)) {
+		return null;
+	}
+
+	const ids = rawList.filter(
+		(id): id is string => typeof id === "string" && id.length > 0,
+	);
+	return ids.length > 0 ? ids : null;
+}
+
+/**
+ * Returns configured ICS subscription enabled status from settings/service when known.
+ */
+export function hasAnyEnabledIcsSubscription(
+	app: App,
+	service: Record<string, unknown>,
+): boolean | null {
+	const liveSubscriptions = safeCall(service, "getSubscriptions");
+	if (Array.isArray(liveSubscriptions) && liveSubscriptions.length > 0) {
+		return liveSubscriptions.some((entry) => isRecord(entry) && entry.enabled === true);
+	}
+
+	const tasknotes = getTaskNotesPlugin(app);
+	const settings = tasknotes?.settings;
+	if (isRecord(settings) && Array.isArray(settings.icsSubscriptions)) {
+		return settings.icsSubscriptions.some(
+			(entry) => isRecord(entry) && entry.enabled === true,
+		);
+	}
+
+	return null;
+}
+
+/**
+ * Queries TaskNotes' OAuthService connection status without touching credentials or tokens.
+ */
+export async function isOAuthProviderConnected(
+	app: App,
+	provider: "google" | "microsoft",
+): Promise<boolean | null> {
+	const tasknotes = getTaskNotesPlugin(app);
+	const oauthService = tasknotes?.oauthService;
+	if (!isRecord(oauthService) || !asCallable(oauthService.isConnected)) {
+		return null;
+	}
+	try {
+		const result = await Promise.resolve(safeCall(oauthService, "isConnected", provider));
+		return typeof result === "boolean" ? result : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Reads TaskNotes' monotonic OAuth connection generation counter when exposed.
+ */
+export function getOAuthConnectionGeneration(
+	app: App,
+	provider: "google" | "microsoft",
+): number | null {
+	const tasknotes = getTaskNotesPlugin(app);
+	const oauthService = tasknotes?.oauthService;
+	if (!isRecord(oauthService) || !asCallable(oauthService.getConnectionGeneration)) {
+		return null;
+	}
+	const generation = safeCall(oauthService, "getConnectionGeneration", provider);
+	return typeof generation === "number" && Number.isFinite(generation) ? generation : null;
+}
+
+/**
+ * Reads Hosted Google connection state safely without inspecting secrets.
+ */
+export function getHostedGoogleConnectionState(
+	service: Record<string, unknown>,
+): HostedGoogleConnectionState {
+	const snapshot = isRecord(service.client)
+		? safeCall(service.client, "getSnapshot")
+		: undefined;
+
+	const signedIn = asCallable(service.isSignedIn)
+		? safeCall(service, "isSignedIn") === true
+		: isRecord(snapshot) &&
+			typeof snapshot.sessionId === "string" &&
+			snapshot.sessionId.length > 0;
+
+	const connected = asCallable(service.isConnected)
+		? safeCall(service, "isConnected") === true
+		: signedIn &&
+			isRecord(snapshot) &&
+			isRecord(snapshot.connection) &&
+			snapshot.connection.status === "active";
+
+	const hasFailure =
+		isRecord(snapshot) && snapshot.failure !== null && snapshot.failure !== undefined;
+
+	const explicitPending =
+		isRecord(snapshot) &&
+		(snapshot.restoring === true ||
+			snapshot.restored === false ||
+			snapshot.status === "restoring" ||
+			snapshot.status === "loading");
+
+	const explicitSettled =
+		isRecord(snapshot) &&
+		(snapshot.restored === true ||
+			snapshot.settled === true ||
+			snapshot.connection !== null ||
+			hasFailure);
+
+	const settled = !explicitPending && (signedIn || connected || explicitSettled);
+
+	return { signedIn, connected, settled, hasFailure };
+}
+
+/**
+ * Subscribes to Hosted Google client state notifications when supported.
+ */
+export function subscribeHostedGoogleClient(
+	service: Record<string, unknown>,
+	callback: () => void,
+): (() => void) | null {
+	if (!isRecord(service.client)) {
+		return null;
+	}
+	const subscribeFn = asCallable(service.client.subscribe);
+	if (!subscribeFn) {
+		return null;
+	}
+	try {
+		const unsubscribe = subscribeFn.call(service.client, () => {
+			callback();
+		});
+		if (typeof unsubscribe !== "function") {
+			return null;
+		}
+		let disposed = false;
+		return () => {
+			if (disposed) {
+				return;
+			}
+			disposed = true;
+			try {
+				(unsubscribe as () => void)();
+			} catch {
+				// Ignore cleanup errors during teardown.
+			}
+		};
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Subscribes to an event emitted by a single TaskNotes calendar provider instance.
+ */
+export function subscribeSingleProviderEvent(
+	provider: Record<string, unknown>,
+	eventName: string,
+	callback: () => void,
+): (() => void) | null {
+	return subscribeProviderEvent(provider, eventName, callback);
+}
+
+/**
+ * Triggers open TaskNotes calendar views to rebuild and repaint their event list.
+ */
+export function refreshOpenCalendarViews(app: App): void {
+	for (const handle of getActiveCalendarViews(app)) {
+		const rawView = handle.rawView as Record<string, unknown>;
+		if (asCallable(rawView.refetchEvents)) {
+			void Promise.resolve(safeCall(rawView, "refetchEvents")).catch(() => {
+				// Ignore view refresh rejections on closing leaves.
+			});
+		} else if (asCallable(rawView.refresh)) {
+			void Promise.resolve(safeCall(rawView, "refresh")).catch(() => {
+				// Ignore view refresh rejections on closing leaves.
+			});
+		}
 	}
 }
