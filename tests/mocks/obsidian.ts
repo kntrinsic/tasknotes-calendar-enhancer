@@ -87,11 +87,26 @@ export class Plugin {
 	}
 }
 
-export class PluginSettingTab {
-	app: App;
-	containerEl = {
+export interface MockSettingContainer {
+	empty(): void;
+}
+
+function createMockContainerEl(): MockSettingContainer & Partial<HTMLElement> {
+	if (typeof document !== "undefined") {
+		const el = document.createElement("div") as HTMLDivElement & { empty: () => void };
+		el.empty = () => {
+			el.replaceChildren();
+		};
+		return el;
+	}
+	return {
 		empty(): void {},
 	};
+}
+
+export class PluginSettingTab {
+	app: App;
+	containerEl = createMockContainerEl();
 
 	constructor(app: App, _plugin: Plugin) {
 		this.app = app;
@@ -119,7 +134,43 @@ export class ButtonComponent {
 		return this;
 	}
 
+	setDisabled(_disabled: boolean): this {
+		return this;
+	}
+
 	onClick(_cb: (evt: MouseEvent) => unknown): this {
+		return this;
+	}
+}
+
+export class ColorComponent {
+	setValue(_value: string): this {
+		return this;
+	}
+
+	setDisabled(_disabled: boolean): this {
+		return this;
+	}
+
+	onChange(_cb: (value: string) => unknown): this {
+		return this;
+	}
+}
+
+export class ExtraButtonComponent {
+	setIcon(_icon: string): this {
+		return this;
+	}
+
+	setTooltip(_tooltip: string): this {
+		return this;
+	}
+
+	setDisabled(_disabled: boolean): this {
+		return this;
+	}
+
+	onClick(_cb: () => unknown): this {
 		return this;
 	}
 }
@@ -131,11 +182,15 @@ export class Setting {
 		this.containerEl = containerEl;
 	}
 
-	setName(_name: string): this {
+	setName(_name: string | DocumentFragment): this {
 		return this;
 	}
 
-	setDesc(_desc: string): this {
+	setDesc(_desc: string | DocumentFragment): this {
+		return this;
+	}
+
+	setHeading(): this {
 		return this;
 	}
 
@@ -148,8 +203,34 @@ export class Setting {
 		cb(new ButtonComponent());
 		return this;
 	}
+
+	addColorPicker(cb: (colorPicker: ColorComponent) => unknown): this {
+		cb(new ColorComponent());
+		return this;
+	}
+
+	addExtraButton(cb: (extraButton: ExtraButtonComponent) => unknown): this {
+		cb(new ExtraButtonComponent());
+		return this;
+	}
 }
 
 export function setIcon(parent: HTMLElement, iconId: string): void {
 	parent.dataset.icon = iconId;
+}
+
+export function setTooltip(
+	el: HTMLElement,
+	tooltip: string,
+	options?: { placement?: string },
+): void {
+	if (!tooltip) {
+		el.removeAttribute("aria-label");
+		el.removeAttribute("data-tooltip-position");
+		return;
+	}
+	el.setAttribute("aria-label", tooltip);
+	if (options?.placement) {
+		el.setAttribute("data-tooltip-position", options.placement);
+	}
 }
