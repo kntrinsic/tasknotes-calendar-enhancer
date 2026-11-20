@@ -681,6 +681,10 @@ export class ExternalCalendarCacheController {
 
 	constructor(private readonly app: App) {}
 
+	isEnabled(): boolean {
+		return this.enabled;
+	}
+
 	enable(): void {
 		if (this.enabled) {
 			return;
