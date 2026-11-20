@@ -5,11 +5,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	findToolbarForContainer,
 	getActiveCalendarViews,
+	getActiveGoogleCalendarService,
 	getBasesLeafContainers,
 	getCacheableCalendarProviders,
 	getEnabledProviderCalendarIds,
 	getExternalCalendarSnapshot,
 	getHostedGoogleConnectionState,
+	getIcsSubscriptionSyncState,
 	getOAuthConnectionGeneration,
 	getTaskNotesPlugin,
 	hasAnyEnabledIcsSubscription,
@@ -575,6 +577,48 @@ describe("tasknotesBridge", () => {
 			connected: false,
 			settled: false,
 			hasFailure: false,
+			connectionStatus: null,
+			failureCode: null,
+		});
+
+		const sessionExpiredHosted = {
+			isSignedIn: () => false,
+			isConnected: () => false,
+			client: {
+				getSnapshot: () => ({
+					sessionId: null,
+					connection: { status: "reconnect_required" },
+					failure: "session_expired",
+				}),
+			},
+		};
+		expect(getHostedGoogleConnectionState(sessionExpiredHosted)).toEqual({
+			signedIn: false,
+			connected: false,
+			settled: true,
+			hasFailure: true,
+			connectionStatus: "reconnect_required",
+			failureCode: "session_expired",
+		});
+
+		const unavailableHosted = {
+			isSignedIn: () => false,
+			isConnected: () => false,
+			client: {
+				getSnapshot: () => ({
+					sessionId: null,
+					connection: null,
+					failure: { code: "unavailable" },
+				}),
+			},
+		};
+		expect(getHostedGoogleConnectionState(unavailableHosted)).toEqual({
+			signedIn: false,
+			connected: false,
+			settled: true,
+			hasFailure: true,
+			connectionStatus: null,
+			failureCode: "unavailable",
 		});
 
 		const clientSubscribers = new Set<() => void>();
@@ -599,6 +643,8 @@ describe("tasknotesBridge", () => {
 			connected: true,
 			settled: true,
 			hasFailure: false,
+			connectionStatus: "active",
+			failureCode: null,
 		});
 
 		const onClientChange = vi.fn();
@@ -633,9 +679,19 @@ describe("tasknotesBridge", () => {
 		disposeProvider?.();
 		expect(providerUnsub).toHaveBeenCalledTimes(1);
 
+		const callOrder: string[] = [];
+		const readEventToggles = vi.fn(() => {
+			callOrder.push("readEventToggles");
+		});
 		const dom = createBasesDom();
-		const refetchEvents = vi.fn(() => Promise.resolve());
+		const refetchEvents = vi.fn(() => {
+			callOrder.push("refetchEvents");
+			return Promise.resolve();
+		});
 		const app = createMockApp({
+			tasknotes: {
+				googleCalendarService: activeHosted,
+			},
 			leaves: [
 				{
 					viewType: "bases",
@@ -643,11 +699,36 @@ describe("tasknotesBridge", () => {
 					containerEl: dom.containerEl,
 					configGet: () => undefined,
 					configSet: vi.fn(),
+					readEventToggles,
 					refetchEvents,
 				},
 			],
 		});
+		expect(getActiveGoogleCalendarService(app)).toBe(activeHosted);
 		refreshOpenCalendarViews(app);
+		expect(readEventToggles).toHaveBeenCalledTimes(1);
 		expect(refetchEvents).toHaveBeenCalledTimes(1);
+		expect(callOrder).toEqual(["readEventToggles", "refetchEvents"]);
+
+		const icsService = {
+			getLastFetched: (id: string) =>
+				id === "sub-done" ? "2026-11-20T09:00:00Z" : undefined,
+			getLastError: (id: string) => (id === "sub-err" ? "Network error" : undefined),
+		};
+		expect(getIcsSubscriptionSyncState(icsService, "sub-done")).toEqual({
+			hasSyncTracker: true,
+			fetched: true,
+			hasError: false,
+		});
+		expect(getIcsSubscriptionSyncState(icsService, "sub-err")).toEqual({
+			hasSyncTracker: true,
+			fetched: false,
+			hasError: true,
+		});
+		expect(getIcsSubscriptionSyncState({}, "sub-any")).toEqual({
+			hasSyncTracker: false,
+			fetched: false,
+			hasError: false,
+		});
 	});
 });

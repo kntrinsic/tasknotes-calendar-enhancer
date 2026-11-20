@@ -736,6 +736,14 @@ export interface HostedGoogleConnectionState {
 	connected: boolean;
 	settled: boolean;
 	hasFailure: boolean;
+	connectionStatus: string | null;
+	failureCode: string | null;
+}
+
+export interface IcsSubscriptionSyncState {
+	hasSyncTracker: boolean;
+	fetched: boolean;
+	hasError: boolean;
 }
 
 /**
@@ -931,7 +939,59 @@ export function getHostedGoogleConnectionState(
 
 	const settled = !explicitPending && (signedIn || connected || explicitSettled);
 
-	return { signedIn, connected, settled, hasFailure };
+	const connectionStatus =
+		isRecord(snapshot) &&
+		isRecord(snapshot.connection) &&
+		typeof snapshot.connection.status === "string"
+			? snapshot.connection.status
+			: null;
+
+	let failureCode: string | null = null;
+	if (isRecord(snapshot)) {
+		if (typeof snapshot.failure === "string" && snapshot.failure.length > 0) {
+			failureCode = snapshot.failure;
+		} else if (
+			isRecord(snapshot.failure) &&
+			typeof snapshot.failure.code === "string" &&
+			snapshot.failure.code.length > 0
+		) {
+			failureCode = snapshot.failure.code;
+		}
+	}
+
+	return { signedIn, connected, settled, hasFailure, connectionStatus, failureCode };
+}
+
+/**
+ * Inspects per-subscription ICS sync progress exposed by TaskNotes.
+ */
+export function getIcsSubscriptionSyncState(
+	service: Record<string, unknown>,
+	subscriptionId: string,
+): IcsSubscriptionSyncState {
+	const hasSyncTracker = asCallable(service.getLastFetched) !== null;
+	const lastFetched = hasSyncTracker
+		? safeCall(service, "getLastFetched", subscriptionId)
+		: undefined;
+	const fetched = typeof lastFetched === "string" && lastFetched.length > 0;
+	const lastError = asCallable(service.getLastError)
+		? safeCall(service, "getLastError", subscriptionId)
+		: undefined;
+	const hasError = typeof lastError === "string" && lastError.length > 0;
+	return { hasSyncTracker, fetched, hasError };
+}
+
+/**
+ * Returns the currently selected `googleCalendarService` source on TaskNotes, if any.
+ */
+export function getActiveGoogleCalendarService(app: App): Record<string, unknown> | null {
+	const tasknotes = getTaskNotesPlugin(app);
+	if (!tasknotes) {
+		return null;
+	}
+	return isRecord(tasknotes.googleCalendarService)
+		? tasknotes.googleCalendarService
+		: null;
 }
 
 /**
@@ -984,11 +1044,14 @@ export function subscribeSingleProviderEvent(
 }
 
 /**
- * Triggers open TaskNotes calendar views to rebuild and repaint their event list.
+ * Triggers open TaskNotes calendar views to refresh toggles, rebuild items, and repaint.
  */
 export function refreshOpenCalendarViews(app: App): void {
 	for (const handle of getActiveCalendarViews(app)) {
 		const rawView = handle.rawView as Record<string, unknown>;
+		if (asCallable(rawView.readEventToggles)) {
+			safeCall(rawView, "readEventToggles");
+		}
 		if (asCallable(rawView.refetchEvents)) {
 			void Promise.resolve(safeCall(rawView, "refetchEvents")).catch(() => {
 				// Ignore view refresh rejections on closing leaves.
