@@ -1,8 +1,8 @@
 {
   "name": "tasknotes-calendar-enhancer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
-  "description": "Companion plugin for TaskNotes adding a Bases toolbar calendar picker, device-local startup cache, mobile month tap details, and month view quick create.",
+  "description": "Companion plugin for TaskNotes adding a Bases toolbar calendar picker, startup cache, mobile month tap, quick create, custom calendar colors, and weekend/holiday colors.",
   "main": "main.js",
   "license": "MIT",
   "scripts": {
