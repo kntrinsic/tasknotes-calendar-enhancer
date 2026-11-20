@@ -76,6 +76,8 @@ export interface CalendarViewHandle {
 		event: MouseEvent | KeyboardEvent,
 	): boolean;
 	openTaskFromPath(taskPath: string): Promise<boolean>;
+	unselectCalendar(): void;
+	openDateCreationMenu(dateStr: string, triggerEvent: MouseEvent): boolean;
 }
 
 type DynamicCallable = (...args: unknown[]) => unknown;
@@ -184,6 +186,42 @@ export function getBasesLeafContainers(app: App): HTMLElement[] {
 		return containers;
 	}
 	return containers;
+}
+
+const LOCAL_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/**
+ * Parses a strict calendar date string (`YYYY-MM-DD`) into local date parts, rejecting impossible dates.
+ */
+export function parseLocalDateParts(
+	dateStr: string,
+): { year: number; month: number; day: number } | null {
+	const match = LOCAL_DATE_PATTERN.exec(dateStr.trim());
+	if (!match) {
+		return null;
+	}
+	const year = Number(match[1]);
+	const month = Number(match[2]);
+	const day = Number(match[3]);
+	const check = new Date(year, month - 1, day);
+	if (
+		check.getFullYear() !== year ||
+		check.getMonth() !== month - 1 ||
+		check.getDate() !== day
+	) {
+		return null;
+	}
+	return { year, month, day };
+}
+
+/**
+ * Formats a `Date` in local calendar time as `YYYY-MM-DD`.
+ */
+export function formatLocalDateString(date: Date): string {
+	const year = String(date.getFullYear()).padStart(4, "0");
+	const month = String(date.getMonth() + 1).padStart(2, "0");
+	const day = String(date.getDate()).padStart(2, "0");
+	return `${year}-${month}-${day}`;
 }
 
 function createCalendarViewHandle(
@@ -369,6 +407,59 @@ function createCalendarViewHandle(
 		}
 	};
 
+	const unselectCalendar = (): void => {
+		const calendar = innerView.calendar;
+		if (!isRecord(calendar) || !asCallable(calendar.unselect)) {
+			return;
+		}
+		safeCall(calendar, "unselect");
+	};
+
+	const openDateCreationMenu = (
+		dateStr: string,
+		triggerEvent: MouseEvent,
+	): boolean => {
+		const parts = parseLocalDateParts(dateStr);
+		if (!parts) {
+			return false;
+		}
+
+		const start = new Date(parts.year, parts.month - 1, parts.day, 0, 0, 0, 0);
+		const end = new Date(parts.year, parts.month - 1, parts.day + 1, 0, 0, 0, 0);
+		const endStr = formatLocalDateString(end);
+
+		const handleDateSelectFn = asCallable(innerView.handleDateSelect);
+		if (handleDateSelectFn) {
+			try {
+				handleDateSelectFn.call(innerView, {
+					start,
+					end,
+					startStr: dateStr,
+					endStr,
+					allDay: true,
+					jsEvent: triggerEvent,
+				});
+				return true;
+			} catch (error) {
+				console.warn("Failed to open TaskNotes date creation menu:", error);
+				return false;
+			}
+		}
+
+		const addTaskOnDayFn = asCallable(innerView.addTaskOnDay);
+		if (addTaskOnDayFn) {
+			try {
+				addTaskOnDayFn.call(innerView, dateStr);
+				return true;
+			} catch (error) {
+				console.warn("Failed to create TaskNotes task on date:", error);
+				return false;
+			}
+		}
+
+		return false;
+	};
+
 	return {
 		rawView: innerView,
 		containerEl,
@@ -381,6 +472,8 @@ function createCalendarViewHandle(
 		hasEngineItemMeta,
 		openDayMorePopover,
 		openTaskFromPath,
+		unselectCalendar,
+		openDateCreationMenu,
 	};
 }
 

@@ -4,6 +4,7 @@ import { type App, TFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	findToolbarForContainer,
+	formatLocalDateString,
 	getActiveCalendarViews,
 	getActiveGoogleCalendarService,
 	getBasesLeafContainers,
@@ -18,6 +19,7 @@ import {
 	isOAuthProviderConnected,
 	openTaskNotesSettings,
 	parseDayNumber,
+	parseLocalDateParts,
 	refreshOpenCalendarViews,
 	subscribeExternalCalendarChanges,
 	subscribeHostedGoogleClient,
@@ -33,6 +35,8 @@ interface MockLeafSpec {
 	readEventToggles?: () => void;
 	refresh?: () => void;
 	refetchEvents?: () => Promise<void>;
+	handleDateSelect?: (info: unknown) => void;
+	addTaskOnDay?: (dateStr: string) => void;
 	viewOptions?: Record<string, unknown>;
 	calendar?: Record<string, unknown>;
 }
@@ -79,6 +83,8 @@ function createMockApp(options: {
 							readEventToggles: spec.readEventToggles,
 							refresh: spec.refresh,
 							refetchEvents: spec.refetchEvents,
+							handleDateSelect: spec.handleDateSelect,
+							addTaskOnDay: spec.addTaskOnDay,
 							viewOptions: spec.viewOptions,
 							calendar: spec.calendar,
 						},
@@ -730,5 +736,80 @@ describe("tasknotesBridge", () => {
 			fetched: false,
 			hasError: false,
 		});
+	});
+
+	it("parses/formats local dates and invokes handleDateSelect or addTaskOnDay for quick create", () => {
+		expect(parseLocalDateParts("2026-11-20")).toEqual({
+			year: 2026,
+			month: 11,
+			day: 20,
+		});
+		expect(parseLocalDateParts("2026-02-30")).toBeNull();
+		expect(parseLocalDateParts("not-a-date")).toBeNull();
+
+		const nov20 = new Date(2026, 10, 20, 0, 0, 0, 0);
+		expect(formatLocalDateString(nov20)).toBe("2026-11-20");
+
+		const dom = createBasesDom();
+		const unselect = vi.fn();
+		const handleDateSelect = vi.fn();
+		const appPrimary = createMockApp({
+			leaves: [
+				{
+					viewType: "bases",
+					controllerViewType: "tasknotesCalendar",
+					containerEl: dom.containerEl,
+					configGet: () => undefined,
+					configSet: vi.fn(),
+					handleDateSelect,
+					calendar: { unselect },
+				},
+			],
+		});
+
+		const [primaryHandle] = getActiveCalendarViews(appPrimary);
+		primaryHandle?.unselectCalendar();
+		expect(unselect).toHaveBeenCalledTimes(1);
+
+		const mouseEvent = new MouseEvent("contextmenu", { clientX: 120, clientY: 220 });
+		expect(primaryHandle?.openDateCreationMenu("2026-11-30", mouseEvent)).toBe(true);
+		expect(handleDateSelect).toHaveBeenCalledTimes(1);
+		const passedInfo = handleDateSelect.mock.calls[0]?.[0] as {
+			start: Date;
+			end: Date;
+			startStr: string;
+			endStr: string;
+			allDay: boolean;
+			jsEvent: MouseEvent;
+			view?: unknown;
+		};
+		expect(formatLocalDateString(passedInfo.start)).toBe("2026-11-30");
+		expect(passedInfo.start.getHours()).toBe(0);
+		expect(formatLocalDateString(passedInfo.end)).toBe("2026-12-01");
+		expect(passedInfo.end.getHours()).toBe(0);
+		expect(passedInfo.startStr).toBe("2026-11-30");
+		expect(passedInfo.endStr).toBe("2026-12-01");
+		expect(passedInfo.allDay).toBe(true);
+		expect(passedInfo.jsEvent).toBe(mouseEvent);
+		expect(passedInfo.view).toBeUndefined();
+
+		expect(primaryHandle?.openDateCreationMenu("2026-02-30", mouseEvent)).toBe(false);
+
+		const addTaskOnDay = vi.fn();
+		const appFallback = createMockApp({
+			leaves: [
+				{
+					viewType: "bases",
+					controllerViewType: "tasknotesCalendar",
+					containerEl: dom.containerEl,
+					configGet: () => undefined,
+					configSet: vi.fn(),
+					addTaskOnDay,
+				},
+			],
+		});
+		const [fallbackHandle] = getActiveCalendarViews(appFallback);
+		expect(fallbackHandle?.openDateCreationMenu("2026-12-05", mouseEvent)).toBe(true);
+		expect(addTaskOnDay).toHaveBeenCalledWith("2026-12-05");
 	});
 });
