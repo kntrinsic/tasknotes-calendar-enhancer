@@ -1,7 +1,13 @@
 import { type App, type EventRef, setIcon } from "obsidian";
 import {
+	CALENDAR_COLOR_PRESETS,
+	getDefaultProviderColor,
+	normalizeHexColor,
+} from "./calendarColorOverrides";
+import {
 	type CalendarViewHandle,
 	type ExternalCalendarItem,
+	type ExternalCalendarProviderId,
 	type ExternalCalendarSnapshot,
 	getActiveCalendarViews,
 	getBasesLeafContainers,
@@ -17,6 +23,16 @@ export const POPOVER_CLASS = "tnce-calendar-picker-popover";
 const HEX_COLOR_PATTERN = /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 const FUNC_COLOR_PATTERN = /^(?:rgb|rgba|hsl|hsla)\(\s*[0-9.+%\s,/-]+\s*\)$/i;
 
+export interface ToolbarCalendarColorAdapter {
+	isEnabled(): boolean;
+	getOverrideColor(provider: ExternalCalendarProviderId, calendarId: string): string | null;
+	setColorOverride(
+		provider: ExternalCalendarProviderId,
+		calendarId: string,
+		hexColor: string | null,
+	): Promise<void>;
+}
+
 interface InjectedToolbarButton {
 	toolbarEl: HTMLElement;
 	wrapperEl: HTMLDivElement;
@@ -29,6 +45,7 @@ interface OpenPopoverState {
 	toolbarEl: HTMLElement;
 	buttonEl: HTMLButtonElement;
 	popoverEl: HTMLDivElement;
+	colorsEnabled: boolean;
 	cleanup: () => void;
 	syncControls: () => void;
 }
@@ -51,11 +68,28 @@ function getAllItems(snapshot: ExternalCalendarSnapshot): ExternalCalendarItem[]
 	return snapshot.groups.flatMap((group) => group.items);
 }
 
+function applyDotColor(
+	colorEl: HTMLElement,
+	rawColor: string | undefined,
+	isCustom: boolean,
+): void {
+	const safeColor = sanitizeCssColor(rawColor);
+	if (safeColor) {
+		colorEl.style.backgroundColor = safeColor;
+		colorEl.classList.remove("is-default");
+	} else {
+		colorEl.style.backgroundColor = "";
+		colorEl.classList.add("is-default");
+	}
+	colorEl.classList.toggle("is-custom", isCustom);
+}
+
 /**
  * Injects a quick external-calendar toggle button and popover into active Bases toolbars.
  */
 export class ToolbarCalendarPicker {
 	private readonly app: App;
+	private readonly colorAdapter?: ToolbarCalendarColorAdapter;
 	private enabled = false;
 	private workspaceEventRefs: EventRef[] = [];
 	private providerUnsubscribe: (() => void) | null = null;
@@ -63,9 +97,11 @@ export class ToolbarCalendarPicker {
 	private injectedButtons = new Map<HTMLElement, InjectedToolbarButton>();
 	private openPopoverState: OpenPopoverState | null = null;
 	private syncTimer: number | null = null;
+	private nextCheckboxId = 0;
 
-	constructor(app: App) {
+	constructor(app: App, colorAdapter?: ToolbarCalendarColorAdapter) {
 		this.app = app;
+		this.colorAdapter = colorAdapter;
 	}
 
 	enable(): void {
@@ -138,10 +174,12 @@ export class ToolbarCalendarPicker {
 			}
 		}
 
+		const colorsEnabled = Boolean(this.colorAdapter?.isEnabled());
 		if (this.openPopoverState) {
 			if (
 				!this.openPopoverState.buttonEl.isConnected ||
-				!this.openPopoverState.toolbarEl.isConnected
+				!this.openPopoverState.toolbarEl.isConnected ||
+				this.openPopoverState.colorsEnabled !== colorsEnabled
 			) {
 				this.closePopover();
 			} else {
@@ -420,6 +458,7 @@ export class ToolbarCalendarPicker {
 		const doc = entry.buttonEl.ownerDocument;
 		const win = doc.defaultView ?? window;
 		const snapshot = getExternalCalendarSnapshot(this.app);
+		const colorsEnabled = Boolean(this.colorAdapter?.isEnabled());
 
 		const popoverEl = doc.createElement("div");
 		popoverEl.className = `menu ${POPOVER_CLASS}`;
@@ -436,26 +475,63 @@ export class ToolbarCalendarPicker {
 		headerEl.appendChild(titleEl);
 
 		const allItems = getAllItems(snapshot);
-		const checkboxRows: Array<{ item: ExternalCalendarItem; inputEl: HTMLInputElement }> = [];
+		const rowStates: Array<{
+			item: ExternalCalendarItem;
+			inputEl: HTMLInputElement;
+			colorEl: HTMLSpanElement;
+			syncColorPanel?: (freshItem: ExternalCalendarItem) => void;
+		}> = [];
 		let showAllBtn: HTMLButtonElement | null = null;
 		let hideAllBtn: HTMLButtonElement | null = null;
 
+		let closeOpenColorPanel: () => void = () => {};
+
+		const findSnapshotItem = (
+			freshSnapshot: ExternalCalendarSnapshot,
+			target: ExternalCalendarItem,
+		): ExternalCalendarItem => {
+			for (const group of freshSnapshot.groups) {
+				if (group.provider !== target.provider) {
+					continue;
+				}
+				const match = group.items.find((candidate) => candidate.id === target.id);
+				if (match) {
+					return match;
+				}
+			}
+			return target;
+		};
+
 		const syncControls = (): void => {
+			const freshSnapshot = getExternalCalendarSnapshot(this.app);
 			let visibleCount = 0;
-			for (const row of checkboxRows) {
+			for (const row of rowStates) {
 				const checked = entry.handle.getBooleanConfig(row.item.configKey, true);
 				row.inputEl.checked = checked;
 				if (checked) {
 					visibleCount += 1;
 				}
+
+				const freshItem = findSnapshotItem(freshSnapshot, row.item);
+				row.item = freshItem;
+				const overrideColor = colorsEnabled
+					? (this.colorAdapter?.getOverrideColor(freshItem.provider, freshItem.id) ??
+						null)
+					: null;
+				applyDotColor(
+					row.colorEl,
+					overrideColor ?? freshItem.color,
+					overrideColor !== null,
+				);
+				row.syncColorPanel?.(freshItem);
 			}
 			if (showAllBtn) {
-				showAllBtn.disabled = visibleCount === checkboxRows.length;
+				showAllBtn.disabled = visibleCount === rowStates.length;
 			}
 			if (hideAllBtn) {
 				hideAllBtn.disabled = visibleCount === 0;
 			}
-			this.updateButtonBadge(entry, snapshot);
+			this.updateButtonBadge(entry, freshSnapshot);
 		};
 
 		if (allItems.length > 0) {
@@ -467,7 +543,7 @@ export class ToolbarCalendarPicker {
 			showAllBtn.className = "tnce-calendar-picker-action-btn";
 			showAllBtn.textContent = "Show all";
 			showAllBtn.addEventListener("click", () => {
-				for (const row of checkboxRows) {
+				for (const row of rowStates) {
 					if (!entry.handle.getBooleanConfig(row.item.configKey, true)) {
 						entry.handle.setCalendarToggle(row.item.configKey, true);
 					}
@@ -480,7 +556,7 @@ export class ToolbarCalendarPicker {
 			hideAllBtn.className = "tnce-calendar-picker-action-btn";
 			hideAllBtn.textContent = "Hide all";
 			hideAllBtn.addEventListener("click", () => {
-				for (const row of checkboxRows) {
+				for (const row of rowStates) {
 					if (entry.handle.getBooleanConfig(row.item.configKey, true)) {
 						entry.handle.setCalendarToggle(row.item.configKey, false);
 					}
@@ -531,11 +607,10 @@ export class ToolbarCalendarPicker {
 				listEl.className = "tnce-calendar-picker-group-items";
 
 				for (const item of group.items) {
-					const rowEl = doc.createElement("label");
-					rowEl.className = "tnce-calendar-picker-item";
-
+					const checkboxId = `tnce-cal-item-${String(++this.nextCheckboxId)}`;
 					const inputEl = doc.createElement("input");
 					inputEl.type = "checkbox";
+					inputEl.id = checkboxId;
 					inputEl.className = "tnce-calendar-picker-checkbox";
 					inputEl.checked = entry.handle.getBooleanConfig(item.configKey, true);
 					inputEl.addEventListener("change", () => {
@@ -543,23 +618,217 @@ export class ToolbarCalendarPicker {
 						syncControls();
 					});
 
+					const overrideColor = colorsEnabled
+						? (this.colorAdapter?.getOverrideColor(item.provider, item.id) ?? null)
+						: null;
+
 					const colorEl = doc.createElement("span");
 					colorEl.className = "tnce-calendar-picker-color";
 					colorEl.setAttribute("aria-hidden", "true");
-					const safeColor = sanitizeCssColor(item.color);
-					if (safeColor) {
-						colorEl.style.backgroundColor = safeColor;
+					applyDotColor(colorEl, overrideColor ?? item.color, overrideColor !== null);
+
+					if (colorsEnabled && this.colorAdapter) {
+						const wrapperEl = doc.createElement("div");
+						wrapperEl.className = "tnce-calendar-picker-item-wrapper";
+
+						const rowEl = doc.createElement("div");
+						rowEl.className = "tnce-calendar-picker-item";
+
+						const colorTriggerBtn = doc.createElement("button");
+						colorTriggerBtn.type = "button";
+						colorTriggerBtn.className = "tnce-calendar-color-trigger";
+						colorTriggerBtn.setAttribute("aria-label", `Change color for ${item.name}`);
+						colorTriggerBtn.setAttribute("aria-expanded", "false");
+						colorTriggerBtn.title = "Change calendar color";
+						colorTriggerBtn.appendChild(colorEl);
+
+						const nameLabelEl = doc.createElement("label");
+						nameLabelEl.className = "tnce-calendar-picker-name";
+						nameLabelEl.htmlFor = checkboxId;
+						nameLabelEl.textContent = item.name;
+
+						rowEl.append(inputEl, colorTriggerBtn, nameLabelEl);
+						wrapperEl.appendChild(rowEl);
+						listEl.appendChild(wrapperEl);
+
+						const rowState: {
+							item: ExternalCalendarItem;
+							inputEl: HTMLInputElement;
+							colorEl: HTMLSpanElement;
+							syncColorPanel?: (freshItem: ExternalCalendarItem) => void;
+						} = { item, inputEl, colorEl };
+						rowStates.push(rowState);
+
+						let panelEl: HTMLDivElement | null = null;
+						const swatchButtons: Array<{ btn: HTMLButtonElement; hex: string }> = [];
+						let customInputEl: HTMLInputElement | null = null;
+						let resetBtnEl: HTMLButtonElement | null = null;
+
+						const syncPanel = (freshItem: ExternalCalendarItem): void => {
+							if (!panelEl) {
+								return;
+							}
+							const currentOverride =
+								this.colorAdapter?.getOverrideColor(
+									freshItem.provider,
+									freshItem.id,
+								) ?? null;
+							const effectiveHex =
+								currentOverride ??
+								normalizeHexColor(freshItem.color) ??
+								getDefaultProviderColor(freshItem.provider);
+							for (const swatch of swatchButtons) {
+								swatch.btn.setAttribute(
+									"aria-pressed",
+									String(effectiveHex === swatch.hex),
+								);
+							}
+							if (customInputEl) {
+								customInputEl.value = effectiveHex;
+							}
+							if (resetBtnEl) {
+								resetBtnEl.disabled = currentOverride === null;
+							}
+						};
+
+						rowState.syncColorPanel = syncPanel;
+
+						const closeThisPanel = (): void => {
+							if (!panelEl) {
+								return;
+							}
+							panelEl.remove();
+							panelEl = null;
+							swatchButtons.length = 0;
+							customInputEl = null;
+							resetBtnEl = null;
+							colorTriggerBtn.setAttribute("aria-expanded", "false");
+							if (closeOpenColorPanel === closeThisPanel) {
+								closeOpenColorPanel = () => {};
+							}
+						};
+
+						const applyColor = async (nextHex: string | null): Promise<void> => {
+							if (!this.colorAdapter) {
+								return;
+							}
+							try {
+								await this.colorAdapter.setColorOverride(
+									rowState.item.provider,
+									rowState.item.id,
+									nextHex,
+								);
+							} catch (error) {
+								console.warn("Failed to update calendar color override:", error);
+								return;
+							}
+							if (
+								!this.openPopoverState ||
+								this.openPopoverState.popoverEl !== popoverEl
+							) {
+								return;
+							}
+							syncControls();
+						};
+
+						colorTriggerBtn.addEventListener("click", (event) => {
+							event.stopPropagation();
+							if (panelEl) {
+								closeThisPanel();
+								return;
+							}
+
+							closeOpenColorPanel();
+
+							const nextPanel = doc.createElement("div");
+							nextPanel.className = "tnce-calendar-color-panel";
+
+							const presetsEl = doc.createElement("div");
+							presetsEl.className = "tnce-calendar-color-presets";
+
+							for (const preset of CALENDAR_COLOR_PRESETS) {
+								const swatchBtn = doc.createElement("button");
+								swatchBtn.type = "button";
+								swatchBtn.className = "tnce-calendar-color-swatch";
+								swatchBtn.setAttribute(
+									"aria-label",
+									`${preset.name} (${preset.hex})`,
+								);
+								swatchBtn.setAttribute("aria-pressed", "false");
+								swatchBtn.title = `${preset.name} (${preset.hex})`;
+								swatchBtn.style.backgroundColor = preset.hex;
+								swatchBtn.addEventListener("click", (swatchEvent) => {
+									swatchEvent.stopPropagation();
+									void applyColor(preset.hex);
+								});
+								swatchButtons.push({ btn: swatchBtn, hex: preset.hex });
+								presetsEl.appendChild(swatchBtn);
+							}
+
+							const customRowEl = doc.createElement("div");
+							customRowEl.className = "tnce-calendar-color-custom-row";
+
+							const customLabelEl = doc.createElement("label");
+							customLabelEl.className = "tnce-calendar-color-custom-label";
+							const customTextEl = doc.createElement("span");
+							customTextEl.textContent = "Custom";
+
+							const colorInput = doc.createElement("input");
+							colorInput.type = "color";
+							colorInput.className = "tnce-calendar-color-input";
+							colorInput.setAttribute(
+								"aria-label",
+								`Custom color for ${rowState.item.name}`,
+							);
+							colorInput.addEventListener("input", () => {
+								const previewHex = normalizeHexColor(colorInput.value);
+								if (previewHex) {
+									applyDotColor(colorEl, previewHex, true);
+								}
+							});
+							colorInput.addEventListener("change", () => {
+								const nextHex = normalizeHexColor(colorInput.value);
+								if (nextHex) {
+									void applyColor(nextHex);
+								}
+							});
+
+							customInputEl = colorInput;
+							customLabelEl.append(customTextEl, colorInput);
+
+							const resetBtn = doc.createElement("button");
+							resetBtn.type = "button";
+							resetBtn.className = "tnce-calendar-color-reset-btn";
+							resetBtn.textContent = "Reset";
+							resetBtn.addEventListener("click", (resetEvent) => {
+								resetEvent.stopPropagation();
+								void applyColor(null);
+							});
+							resetBtnEl = resetBtn;
+
+							customRowEl.append(customLabelEl, resetBtn);
+							nextPanel.append(presetsEl, customRowEl);
+
+							panelEl = nextPanel;
+							wrapperEl.appendChild(nextPanel);
+							colorTriggerBtn.setAttribute("aria-expanded", "true");
+							closeOpenColorPanel = closeThisPanel;
+							syncPanel(rowState.item);
+							nextPanel.scrollIntoView({ block: "nearest" });
+						});
 					} else {
-						colorEl.classList.add("is-default");
+						const rowEl = doc.createElement("label");
+						rowEl.className = "tnce-calendar-picker-item";
+						rowEl.htmlFor = checkboxId;
+
+						const nameEl = doc.createElement("span");
+						nameEl.className = "tnce-calendar-picker-name";
+						nameEl.textContent = item.name;
+
+						rowEl.append(inputEl, colorEl, nameEl);
+						listEl.appendChild(rowEl);
+						rowStates.push({ item, inputEl, colorEl });
 					}
-
-					const nameEl = doc.createElement("span");
-					nameEl.className = "tnce-calendar-picker-name";
-					nameEl.textContent = item.name;
-
-					rowEl.append(inputEl, colorEl, nameEl);
-					listEl.appendChild(rowEl);
-					checkboxRows.push({ item, inputEl });
 				}
 
 				groupEl.appendChild(listEl);
@@ -637,8 +906,10 @@ export class ToolbarCalendarPicker {
 			toolbarEl: entry.toolbarEl,
 			buttonEl: entry.buttonEl,
 			popoverEl,
+			colorsEnabled,
 			syncControls,
 			cleanup: () => {
+				closeOpenColorPanel();
 				doc.removeEventListener("pointerdown", onPointerDown, true);
 				doc.removeEventListener("mousedown", onPointerDown, true);
 				doc.removeEventListener("keydown", onKeyDown, true);

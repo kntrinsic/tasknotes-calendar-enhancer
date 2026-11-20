@@ -3,9 +3,14 @@
 import type { App } from "obsidian";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+	buildCalendarColorKey,
+	CALENDAR_COLOR_PRESETS,
+} from "../src/calendarColorOverrides";
+import {
 	POPOVER_CLASS,
 	sanitizeCssColor,
 	TOOLBAR_BUTTON_WRAPPER_CLASS,
+	type ToolbarCalendarColorAdapter,
 	ToolbarCalendarPicker,
 } from "../src/toolbarCalendarPicker";
 
@@ -523,5 +528,131 @@ describe("ToolbarCalendarPicker", () => {
 		).toBeNull();
 		expect(document.body.querySelector(`.${POPOVER_CLASS}`)).toBeNull();
 		expect(harness.configSetSpy).not.toHaveBeenCalled();
+	});
+
+	it("supports inline preset swatches, custom hex input, reset, and checkbox isolation when color adapter is enabled", async () => {
+		const msCals = [
+			{ id: "ms-1", summary: "Outlook Work", backgroundColor: "#0078d4" },
+			{ id: "ms-2", summary: "Outlook Personal", backgroundColor: "#0078d4" },
+		];
+		const harness = createHarness({
+			microsoftCalendars: msCals,
+		});
+
+		let colorsEnabled = true;
+		const overrides = new Map<string, string>();
+		const setColorOverride = vi.fn(
+			(
+				provider: "google" | "microsoft" | "ics",
+				calendarId: string,
+				hexColor: string | null,
+			) => {
+				const key = buildCalendarColorKey(provider, calendarId);
+				if (hexColor === null) {
+					overrides.delete(key);
+				} else {
+					overrides.set(key, hexColor);
+				}
+				const target = msCals.find((cal) => cal.id === calendarId);
+				if (target) {
+					target.backgroundColor = hexColor ?? "#0078d4";
+				}
+				picker?.syncAllToolbars();
+				return Promise.resolve();
+			},
+		);
+
+		const adapter: ToolbarCalendarColorAdapter = {
+			isEnabled: () => colorsEnabled,
+			getOverrideColor: (provider, calendarId) =>
+				overrides.get(buildCalendarColorKey(provider, calendarId)) ?? null,
+			setColorOverride,
+		};
+
+		picker = new ToolbarCalendarPicker(harness.app, adapter);
+		picker.enable();
+
+		harness.toolbarEl
+			.querySelector<HTMLButtonElement>(".tnce-calendar-toggle-button")
+			?.click();
+
+		const popover = document.body.querySelector<HTMLDivElement>(`.${POPOVER_CLASS}`);
+		expect(popover).not.toBeNull();
+
+		const triggers = [
+			...(popover?.querySelectorAll<HTMLButtonElement>(".tnce-calendar-color-trigger") ??
+				[]),
+		];
+		expect(triggers).toHaveLength(2);
+
+		// Opening the color panel does not toggle visibility checkboxes.
+		triggers[0]?.click();
+		expect(harness.configSetSpy).not.toHaveBeenCalled();
+		expect(popover?.querySelectorAll(".tnce-calendar-color-panel")).toHaveLength(1);
+		expect(triggers[0]?.getAttribute("aria-expanded")).toBe("true");
+
+		const swatches = [
+			...(popover?.querySelectorAll<HTMLButtonElement>(".tnce-calendar-color-swatch") ??
+				[]),
+		];
+		expect(swatches).toHaveLength(CALENDAR_COLOR_PRESETS.length);
+
+		// Pick the first preset (#e05252) and keep the popover open.
+		swatches[0]?.click();
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect(setColorOverride).toHaveBeenCalledWith(
+			"microsoft",
+			"ms-1",
+			CALENDAR_COLOR_PRESETS[0]?.hex,
+		);
+		expect(document.body.querySelector(`.${POPOVER_CLASS}`)).not.toBeNull();
+		const firstDot = triggers[0]?.querySelector<HTMLElement>(".tnce-calendar-picker-color");
+		expect(firstDot?.classList.contains("is-custom")).toBe(true);
+		expect(swatches[0]?.getAttribute("aria-pressed")).toBe("true");
+
+		// Custom color input previews on `input` and persists on `change`.
+		const customInput = popover?.querySelector<HTMLInputElement>(".tnce-calendar-color-input");
+		expect(customInput).not.toBeNull();
+		if (customInput) {
+			customInput.value = "#12ab34";
+			customInput.dispatchEvent(new Event("input", { bubbles: true }));
+			expect(firstDot?.style.backgroundColor).not.toBe("");
+			customInput.dispatchEvent(new Event("change", { bubbles: true }));
+		}
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(setColorOverride).toHaveBeenCalledWith("microsoft", "ms-1", "#12ab34");
+
+		// Reset clears the override and restores default dot state.
+		const resetBtn = popover?.querySelector<HTMLButtonElement>(
+			".tnce-calendar-color-reset-btn",
+		);
+		expect(resetBtn?.disabled).toBe(false);
+		resetBtn?.click();
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(setColorOverride).toHaveBeenCalledWith("microsoft", "ms-1", null);
+		expect(firstDot?.classList.contains("is-custom")).toBe(false);
+		expect(resetBtn?.disabled).toBe(true);
+
+		// Opening the second calendar's color panel closes the first panel.
+		triggers[1]?.click();
+		expect(popover?.querySelectorAll(".tnce-calendar-color-panel")).toHaveLength(1);
+		expect(triggers[0]?.getAttribute("aria-expanded")).toBe("false");
+		expect(triggers[1]?.getAttribute("aria-expanded")).toBe("true");
+
+		// Clicking the calendar name label still toggles its checkbox properly.
+		const labels = [
+			...(popover?.querySelectorAll<HTMLLabelElement>(".tnce-calendar-picker-name") ?? []),
+		];
+		labels[0]?.click();
+		expect(harness.configSetSpy).toHaveBeenCalledWith("showMicrosoftCalendar_ms-1", false);
+
+		// Disabling color overrides closes any stale color-enabled popover cleanly on sync.
+		colorsEnabled = false;
+		picker.syncAllToolbars();
+		expect(document.body.querySelector(`.${POPOVER_CLASS}`)).toBeNull();
 	});
 });
