@@ -30,6 +30,23 @@ export function parseDayNumber(dateStr: string): number | null {
 	return Math.floor(date.getTime() / MS_PER_DAY);
 }
 
+/**
+ * Formats a UTC epoch day number from `@tasknotes/calendar` back into `YYYY-MM-DD`.
+ */
+export function formatDayNumber(dayNum: number): string | null {
+	if (!Number.isInteger(dayNum)) {
+		return null;
+	}
+	const date = new Date(dayNum * MS_PER_DAY);
+	if (Number.isNaN(date.getTime())) {
+		return null;
+	}
+	const year = String(date.getUTCFullYear()).padStart(4, "0");
+	const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+	const day = String(date.getUTCDate()).padStart(2, "0");
+	return `${year}-${month}-${day}`;
+}
+
 export type ExternalCalendarProviderId = "google" | "microsoft" | "ics";
 
 export interface ExternalCalendarItem {
@@ -62,10 +79,16 @@ export interface ExternalCalendarSnapshot {
 
 export interface CalendarViewHandle {
 	readonly rawView: object;
+	readonly rawCalendar: object | null;
 	readonly containerEl: HTMLElement;
 	readonly toolbarEl: HTMLElement | null;
 	getBooleanConfig(key: string, fallback: boolean): boolean;
 	setCalendarToggle(key: string, visible: boolean): boolean;
+	getCalendarMonthDisplay(): string | null;
+	getCalendarViewType(): string | null;
+	getCalendarDayMaxEvents(): boolean | number | null;
+	getConfiguredDayMaxEvents(): boolean | number | null;
+	setCalendarDayMaxEvents(value: boolean | number): boolean;
 	isMonthDayPanelEnabled(): boolean;
 	isSelectionModeActive(): boolean;
 	isCalendarEngineDragging(): boolean;
@@ -224,15 +247,110 @@ export function formatLocalDateString(date: Date): string {
 	return `${year}-${month}-${day}`;
 }
 
+function getDayMaxEventsValue(value: unknown): boolean | number | null {
+	return typeof value === "boolean" || typeof value === "number" ? value : null;
+}
+
 function createCalendarViewHandle(
 	app: App,
 	innerView: Record<string, unknown>,
 	containerEl: HTMLElement,
 	config: Record<string, unknown>,
 ): CalendarViewHandle {
+	const rawCalendar = isRecord(innerView.calendar) ? innerView.calendar : null;
+
 	const getBooleanConfig = (key: string, fallback: boolean): boolean => {
 		const value = safeCall(config, "get", key);
 		return typeof value === "boolean" ? value : fallback;
+	};
+
+	const isMonthDayPanelEnabled = (): boolean => {
+		try {
+			if (
+				isRecord(innerView.viewOptions) &&
+				innerView.viewOptions.showMonthDayPanel === true
+			) {
+				return true;
+			}
+			return containerEl.querySelector(".tn-calendar-composition") !== null;
+		} catch {
+			return false;
+		}
+	};
+
+	const getCalendarMonthDisplay = (): string | null => {
+		const calendar = innerView.calendar;
+		if (!isRecord(calendar)) {
+			return null;
+		}
+		const opts = safeCall(calendar, "getOptions");
+		return isRecord(opts) && typeof opts.monthDisplay === "string"
+			? opts.monthDisplay
+			: null;
+	};
+
+	const getCalendarViewType = (): string | null => {
+		const calendar = innerView.calendar;
+		if (!isRecord(calendar)) {
+			return null;
+		}
+		const view = isRecord(calendar.view) ? calendar.view : safeCall(calendar, "getView");
+		return isRecord(view) && typeof view.type === "string" ? view.type : null;
+	};
+
+	const getCalendarDayMaxEvents = (): boolean | number | null => {
+		const calendar = innerView.calendar;
+		if (!isRecord(calendar)) {
+			return null;
+		}
+		const opts = safeCall(calendar, "getOptions");
+		return isRecord(opts) ? getDayMaxEventsValue(opts.dayMaxEvents) : null;
+	};
+
+	const getConfiguredDayMaxEvents = (): boolean | number | null => {
+		if (!isRecord(innerView.viewOptions)) {
+			return null;
+		}
+		return getDayMaxEventsValue(innerView.viewOptions.dayMaxEvents);
+	};
+
+	const setCalendarDayMaxEvents = (value: boolean | number): boolean => {
+		if (!containerEl.isConnected) {
+			return false;
+		}
+		const calendar = innerView.calendar;
+		if (!isRecord(calendar) || calendar.destroyed === true) {
+			return false;
+		}
+		const setOptionsFn = asCallable(calendar.setOptions);
+		if (!setOptionsFn) {
+			return false;
+		}
+		if (getCalendarDayMaxEvents() === value) {
+			return false;
+		}
+
+		try {
+			setOptionsFn.call(calendar, { dayMaxEvents: value });
+		} catch (error) {
+			console.warn("Failed to update TaskNotes calendar dayMaxEvents:", error);
+			return false;
+		}
+
+		safeCall(innerView, "syncCalendarToolbar");
+		safeCall(innerView, "syncMonthChipControls");
+
+		if (!isMonthDayPanelEnabled()) {
+			for (const more of containerEl.querySelectorAll<HTMLElement>(
+				".tnc-dg--chips .tnc-dg-dots-more",
+			)) {
+				more.parentElement?.removeAttribute("aria-hidden");
+				more.setAttribute("role", "button");
+				more.setAttribute("tabindex", "0");
+				more.setAttribute("data-tnc-no-drag", "");
+			}
+		}
+		return true;
 	};
 
 	const setCalendarToggle = (key: string, visible: boolean): boolean => {
@@ -265,20 +383,6 @@ function createCalendarViewHandle(
 			}
 		}
 		return true;
-	};
-
-	const isMonthDayPanelEnabled = (): boolean => {
-		try {
-			if (
-				isRecord(innerView.viewOptions) &&
-				innerView.viewOptions.showMonthDayPanel === true
-			) {
-				return true;
-			}
-			return containerEl.querySelector(".tn-calendar-composition") !== null;
-		} catch {
-			return false;
-		}
 	};
 
 	const isSelectionModeActive = (): boolean => {
@@ -462,10 +566,16 @@ function createCalendarViewHandle(
 
 	return {
 		rawView: innerView,
+		rawCalendar,
 		containerEl,
 		toolbarEl: findToolbarForContainer(containerEl),
 		getBooleanConfig,
 		setCalendarToggle,
+		getCalendarMonthDisplay,
+		getCalendarViewType,
+		getCalendarDayMaxEvents,
+		getConfiguredDayMaxEvents,
+		setCalendarDayMaxEvents,
 		isMonthDayPanelEnabled,
 		isSelectionModeActive,
 		isCalendarEngineDragging,

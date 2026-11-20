@@ -4,6 +4,7 @@ import { type App, TFile } from "obsidian";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	findToolbarForContainer,
+	formatDayNumber,
 	formatLocalDateString,
 	getActiveCalendarViews,
 	getActiveGoogleCalendarService,
@@ -811,5 +812,16 @@ describe("tasknotesBridge", () => {
 		const [fallbackHandle] = getActiveCalendarViews(appFallback);
 		expect(fallbackHandle?.openDateCreationMenu("2026-12-05", mouseEvent)).toBe(true);
 		expect(addTaskOnDay).toHaveBeenCalledWith("2026-12-05");
+	});
+
+	it("formats valid integer epoch day numbers back to YYYY-MM-DD and rejects non-integers", () => {
+		const dayNum = parseDayNumber("2026-11-20");
+		if (dayNum === null) {
+			throw new Error("Expected valid epoch day number");
+		}
+		expect(formatDayNumber(dayNum)).toBe("2026-11-20");
+		expect(formatDayNumber(0)).toBe("1970-01-01");
+		expect(formatDayNumber(Number.NaN)).toBeNull();
+		expect(formatDayNumber(1.5)).toBeNull();
 	});
 });
