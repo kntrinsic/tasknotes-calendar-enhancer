@@ -6,6 +6,10 @@ import {
 	MOBILE_MONTH_TAP_BODY_CLASS,
 	MobileMonthTapController,
 } from "../src/mobileMonthTap";
+import {
+	LONG_PRESS_DELAY_MS,
+	MonthDayQuickCreateController,
+} from "../src/monthDayQuickCreate";
 import { parseDayNumber } from "../src/tasknotesBridge";
 
 interface HarnessOptions {
@@ -101,6 +105,8 @@ function createMonthHarness(options: HarnessOptions = {}) {
 	}
 
 	const configSetSpy = vi.fn();
+	const handleDateSelectSpy = vi.fn();
+	const unselectSpy = vi.fn();
 	const openMoreSpy = vi.fn();
 	const openTaskEditModalSpy = vi.fn();
 	const openFileSpy = vi.fn(() => Promise.resolve());
@@ -126,9 +132,11 @@ function createMonthHarness(options: HarnessOptions = {}) {
 					viewOptions: {
 						showMonthDayPanel: options.showMonthDayPanel ?? false,
 					},
+					handleDateSelect: handleDateSelectSpy,
 					calendar: {
 						meta,
 						session: { active: false },
+						unselect: unselectSpy,
 						openMore: openMoreSpy,
 					},
 				},
@@ -177,6 +185,8 @@ function createMonthHarness(options: HarnessOptions = {}) {
 		indicatorEl,
 		moreLink,
 		configSetSpy,
+		handleDateSelectSpy,
+		unselectSpy,
 		openMoreSpy,
 		openTaskEditModalSpy,
 		openFileSpy,
@@ -197,6 +207,7 @@ describe("MobileMonthTapController", () => {
 	});
 
 	afterEach(() => {
+		vi.useRealTimers();
 		controller?.disable();
 		controller = null;
 		vi.restoreAllMocks();
@@ -313,6 +324,111 @@ describe("MobileMonthTapController", () => {
 			harness.dayCell,
 			clickEvent,
 		);
+	});
+
+	it("opens day popover instead of date selection when tapping empty space on a chips day with +more", () => {
+		const harness = createMonthHarness({
+			gridMode: "chips",
+			includeMoreLink: true,
+			includeIndicator: true,
+		});
+		controller = new MobileMonthTapController(harness.app);
+		controller.enable();
+
+		harness.dayCell.dispatchEvent(
+			new PointerEvent("pointerdown", {
+				bubbles: true,
+				button: 0,
+				pointerId: 12,
+				clientX: 40,
+				clientY: 40,
+			}),
+		);
+		expect(harness.bubblePointerDownSpy).not.toHaveBeenCalled();
+
+		const clickEvent = new MouseEvent("click", { bubbles: true, cancelable: true });
+		harness.dayCell.dispatchEvent(clickEvent);
+		expect(harness.openMoreSpy).toHaveBeenCalledWith(
+			parseDayNumber("2026-11-20"),
+			harness.dayCell,
+			clickEvent,
+		);
+	});
+
+	it("prevents selection pointerdown on +more without double-opening on click", () => {
+		const harness = createMonthHarness({
+			gridMode: "chips",
+			includeMoreLink: true,
+			includeIndicator: true,
+		});
+		controller = new MobileMonthTapController(harness.app);
+		controller.enable();
+
+		harness.moreLink?.dispatchEvent(
+			new PointerEvent("pointerdown", {
+				bubbles: true,
+				button: 0,
+				pointerId: 13,
+				clientX: 44,
+				clientY: 50,
+			}),
+		);
+		expect(harness.bubblePointerDownSpy).not.toHaveBeenCalled();
+
+		harness.moreLink?.dispatchEvent(
+			new MouseEvent("click", { bubbles: true, cancelable: true }),
+		);
+		expect(harness.openMoreSpy).not.toHaveBeenCalled();
+	});
+
+	it("still allows long-press quick create on empty space of a chips day with +more", () => {
+		vi.useFakeTimers();
+		const harness = createMonthHarness({
+			gridMode: "chips",
+			includeMoreLink: true,
+			includeIndicator: true,
+		});
+		controller = new MobileMonthTapController(harness.app);
+		const quickCreate = new MonthDayQuickCreateController(harness.app);
+		controller.enable();
+		quickCreate.enable();
+
+		harness.dayCell.dispatchEvent(
+			new PointerEvent("pointerdown", {
+				bubbles: true,
+				cancelable: true,
+				pointerId: 14,
+				pointerType: "touch",
+				button: 0,
+				clientX: 48,
+				clientY: 48,
+			}),
+		);
+		expect(harness.bubblePointerDownSpy).not.toHaveBeenCalled();
+
+		vi.advanceTimersByTime(LONG_PRESS_DELAY_MS);
+		expect(harness.handleDateSelectSpy).toHaveBeenCalledTimes(1);
+
+		const upEvent = new PointerEvent("pointerup", {
+			bubbles: true,
+			cancelable: true,
+			pointerId: 14,
+			pointerType: "touch",
+			button: 0,
+		});
+		harness.dayCell.dispatchEvent(upEvent);
+		expect(upEvent.defaultPrevented).toBe(true);
+
+		const clickEvent = new MouseEvent("click", {
+			bubbles: true,
+			cancelable: true,
+			button: 0,
+		});
+		harness.dayCell.dispatchEvent(clickEvent);
+		expect(clickEvent.defaultPrevented).toBe(true);
+		expect(harness.openMoreSpy).not.toHaveBeenCalled();
+
+		quickCreate.disable();
 	});
 
 	it("opens day popover in dots mode and suppresses trigger if pointer dragged/swiped > 10px", () => {

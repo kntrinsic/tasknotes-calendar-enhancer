@@ -82,10 +82,6 @@ function findFallbackDayCell(target: Element): HTMLElement | null {
 		return null;
 	}
 
-	if (dayCell.closest(".tnc-dg--chips") && dayCell.querySelector(".tnc-dg-dots-more")) {
-		return null;
-	}
-
 	return dayCell;
 }
 
@@ -214,6 +210,11 @@ export class MobileMonthTapController {
 			}
 			const target = asElement(event.target);
 			if (!target) {
+				return;
+			}
+			if (target.closest(".tnc-dg--chips .tnc-dg-dots-more")) {
+				// Prevent @tasknotes/calendar bubble-phase pointerdown from starting day selection on "+N".
+				event.stopPropagation();
 				return;
 			}
 			const dayCell = findFallbackDayCell(target);
