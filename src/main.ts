@@ -6,6 +6,7 @@ import {
 	type TaskNotesCalendarEnhancerSettings,
 	TaskNotesCalendarEnhancerSettingTab,
 } from "./settings";
+import { ToolbarCalendarPicker } from "./toolbarCalendarPicker";
 
 /**
  * Companion plugin extending TaskNotes without modifying upstream files.
@@ -16,6 +17,7 @@ export default class TaskNotesCalendarEnhancerPlugin
 {
 	settings: TaskNotesCalendarEnhancerSettings = { ...DEFAULT_SETTINGS };
 	private isLoaded = false;
+	private toolbarCalendarPicker: ToolbarCalendarPicker | null = null;
 
 	async onload(): Promise<void> {
 		this.isLoaded = true;
@@ -44,7 +46,13 @@ export default class TaskNotesCalendarEnhancerPlugin
 		if (!this.isLoaded) {
 			return;
 		}
-		// Phase 2-4 feature controllers will be synchronized here based on this.settings.
+
+		if (this.settings.enableToolbarCalendarPicker) {
+			this.toolbarCalendarPicker ??= new ToolbarCalendarPicker(this.app);
+			this.toolbarCalendarPicker.enable();
+		} else {
+			this.toolbarCalendarPicker?.disable();
+		}
 	}
 
 	clearCalendarCache(): Promise<void> {
@@ -53,7 +61,8 @@ export default class TaskNotesCalendarEnhancerPlugin
 	}
 
 	private teardownFeatures(): void {
-		// Phase 2-4 cleanup hooks (DOM, listeners, observers, monkey patches).
 		// Never call Bases config.set() inside onunload() (Bases #1397).
+		this.toolbarCalendarPicker?.disable();
+		this.toolbarCalendarPicker = null;
 	}
 }
