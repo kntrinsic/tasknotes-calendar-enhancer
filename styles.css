@@ -353,3 +353,394 @@ body.tnce-month-quick-create
 	-webkit-user-select: none;
 	user-select: none;
 }
+
+/* ==========================================================================
+   Phase 5: Custom Calendar Colors
+   ========================================================================== */
+
+.tnce-calendar-picker-item-wrapper {
+	display: flex;
+	flex-direction: column;
+}
+
+.menu.tnce-calendar-picker-popover button.tnce-calendar-color-trigger {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+	width: 18px;
+	height: 18px;
+	padding: 0;
+	margin: 0;
+	background: transparent;
+	background-color: transparent;
+	border: none;
+	border-radius: 999px;
+	box-shadow: none;
+	cursor: var(--cursor-link, pointer);
+}
+
+.menu.tnce-calendar-picker-popover button.tnce-calendar-color-trigger:hover {
+	background: var(--background-modifier-hover);
+	background-color: var(--background-modifier-hover);
+}
+
+.menu.tnce-calendar-picker-popover button.tnce-calendar-color-trigger:focus-visible {
+	outline: none;
+	box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+}
+
+.tnce-calendar-picker-color.is-custom {
+	box-shadow: 0 0 0 1px var(--background-modifier-border-hover);
+}
+
+.tnce-calendar-color-panel {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin: 2px 4px 6px 24px;
+	padding: 8px;
+	border-radius: var(--radius-s, 4px);
+	background-color: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+}
+
+.tnce-calendar-color-presets {
+	display: grid;
+	grid-template-columns: repeat(6, minmax(0, 1fr));
+	gap: 6px;
+}
+
+.menu.tnce-calendar-picker-popover button.tnce-calendar-color-swatch {
+	width: 22px;
+	height: 22px;
+	min-width: 22px;
+	min-height: 22px;
+	padding: 0;
+	margin: 0 auto;
+	border: 2px solid transparent;
+	border-radius: 999px;
+	box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.14);
+	cursor: var(--cursor-link, pointer);
+}
+
+.menu.tnce-calendar-picker-popover button.tnce-calendar-color-swatch:hover {
+	transform: scale(1.08);
+}
+
+.menu.tnce-calendar-picker-popover
+	button.tnce-calendar-color-swatch[aria-pressed="true"] {
+	border-color: var(--text-normal);
+	box-shadow: 0 0 0 2px var(--background-primary);
+}
+
+.menu.tnce-calendar-picker-popover button.tnce-calendar-color-swatch:focus-visible {
+	outline: none;
+	box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
+}
+
+.tnce-calendar-color-custom-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.tnce-calendar-color-custom-label {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: var(--font-ui-smaller, 12px);
+	color: var(--text-muted);
+	cursor: var(--cursor-link, pointer);
+}
+
+.tnce-calendar-color-input {
+	width: 26px;
+	height: 22px;
+	padding: 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s, 4px);
+	background: transparent;
+	cursor: var(--cursor-link, pointer);
+}
+
+.menu.tnce-calendar-picker-popover button.tnce-calendar-color-reset-btn {
+	background: transparent;
+	background-color: transparent;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s, 4px);
+	box-shadow: none;
+	height: auto;
+	margin: 0;
+	padding: 2px 8px;
+	color: var(--text-muted);
+	font: inherit;
+	font-size: var(--font-ui-smaller, 12px);
+	cursor: var(--cursor-link, pointer);
+}
+
+.menu.tnce-calendar-picker-popover
+	button.tnce-calendar-color-reset-btn:hover:not(:disabled) {
+	background: var(--background-modifier-hover);
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.menu.tnce-calendar-picker-popover button.tnce-calendar-color-reset-btn:disabled {
+	color: var(--text-faint);
+	cursor: default;
+	opacity: 0.6;
+}
+
+.is-mobile .menu.tnce-calendar-picker-popover button.tnce-calendar-color-trigger,
+.is-mobile .menu.tnce-calendar-picker-popover button.tnce-calendar-color-reset-btn {
+	min-width: 36px;
+	min-height: 36px;
+}
+
+.is-mobile .menu.tnce-calendar-picker-popover button.tnce-calendar-color-swatch {
+	width: 28px;
+	height: 28px;
+	min-width: 28px;
+	min-height: 28px;
+}
+
+@media (pointer: coarse) {
+	.menu.tnce-calendar-picker-popover button.tnce-calendar-color-trigger,
+	.menu.tnce-calendar-picker-popover button.tnce-calendar-color-reset-btn {
+		min-width: 36px;
+		min-height: 36px;
+	}
+
+	.menu.tnce-calendar-picker-popover button.tnce-calendar-color-swatch {
+		width: 28px;
+		height: 28px;
+		min-width: 28px;
+		min-height: 28px;
+	}
+}
+
+/* ==========================================================================
+   Phase 6: Weekend & Holiday Colors
+   ========================================================================== */
+
+body.tnce-weekend-holiday-colors {
+	--tnce-saturday-color: #3b82f6;
+	--tnce-sunday-color: #ff4d5a;
+	--tnce-holiday-color: #ff4d5a;
+}
+
+body.theme-dark.tnce-weekend-holiday-colors {
+	--tnce-saturday-color: #6cb4ff;
+	--tnce-sunday-color: #ff757f;
+	--tnce-holiday-color: #ff757f;
+}
+
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dg-dow[data-tnce-day-kind="saturday"],
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-ym-dow[data-tnce-day-kind="saturday"],
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dh[data-tnce-day-kind="saturday"]
+	.tnc-dh-dow,
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dg-day[data-tnce-day-kind="saturday"]:not(.is-today):not(.is-other-month)
+	.tnc-dg-num,
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dh[data-tnce-day-kind="saturday"]:not(.is-today)
+	.tnc-dh-num,
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-ym-day[data-tnce-day-kind="saturday"]:not(.is-today)
+	.tnc-ym-num,
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-strip-day[data-tnce-day-kind="saturday"]:not(.is-today):not(.is-focus)
+	.tnc-strip-num,
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-list-day[data-tnce-day-kind="saturday"]:not(.is-today) {
+	color: var(--tnce-saturday-color);
+}
+
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dg-dow[data-tnce-day-kind="sunday"],
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-ym-dow[data-tnce-day-kind="sunday"],
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dh[data-tnce-day-kind="sunday"]
+	.tnc-dh-dow,
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dg-day[data-tnce-day-kind="sunday"]:not(.is-today):not(.is-other-month)
+	.tnc-dg-num,
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dh[data-tnce-day-kind="sunday"]:not(.is-today)
+	.tnc-dh-num,
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-ym-day[data-tnce-day-kind="sunday"]:not(.is-today)
+	.tnc-ym-num,
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-strip-day[data-tnce-day-kind="sunday"]:not(.is-today):not(.is-focus)
+	.tnc-strip-num,
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-list-day[data-tnce-day-kind="sunday"]:not(.is-today) {
+	color: var(--tnce-sunday-color);
+}
+
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dh[data-tnce-day-kind="holiday"]
+	.tnc-dh-dow,
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dg-day[data-tnce-day-kind="holiday"]:not(.is-today):not(.is-other-month)
+	.tnc-dg-num,
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dh[data-tnce-day-kind="holiday"]:not(.is-today)
+	.tnc-dh-num,
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-ym-day[data-tnce-day-kind="holiday"]:not(.is-today)
+	.tnc-ym-num,
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-strip-day[data-tnce-day-kind="holiday"]:not(.is-today):not(.is-focus)
+	.tnc-strip-num,
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-list-day[data-tnce-day-kind="holiday"]:not(.is-today) {
+	color: var(--tnce-holiday-color);
+}
+
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dg-day.is-other-month[data-tnce-day-kind="saturday"]:not(.is-today)
+	.tnc-dg-num {
+	color: color-mix(in srgb, var(--tnce-saturday-color) 62%, transparent);
+}
+
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dg-day.is-other-month[data-tnce-day-kind="sunday"]:not(.is-today)
+	.tnc-dg-num,
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dg-day.is-other-month[data-tnce-day-kind="holiday"]:not(.is-today)
+	.tnc-dg-num {
+	color: color-mix(in srgb, var(--tnce-holiday-color) 62%, transparent);
+}
+
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dg:not(.tnc-dg--dots)
+	.tnc-dg-day[data-tnce-day-kind="holiday"]
+	.tnc-dg-top,
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dg--chips
+	.tnc-dg-day[data-tnce-day-kind="holiday"]
+	.tnc-dg-top {
+	justify-content: flex-end;
+	align-items: center;
+	gap: 4px;
+}
+
+body.tnce-weekend-holiday-colors
+	.tasknotes-plugin.advanced-calendar-view
+	.tnc-dg-day[data-tnce-day-kind="holiday"]
+	.tnc-dg-num {
+	flex-shrink: 0;
+}
+
+.tnce-holiday-label--month {
+	flex: 1 1 auto;
+	min-width: 0;
+	text-align: center;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	font-size: var(--tn-type-2xs, 11px);
+	font-weight: 500;
+	line-height: 18px;
+	color: var(--tnce-holiday-color);
+	pointer-events: auto;
+}
+
+.tnc-dg-day.is-other-month .tnce-holiday-label--month {
+	color: color-mix(in srgb, var(--tnce-holiday-color) 62%, transparent);
+}
+
+.tnc-dg--dots:not(.tnc-dg--chips) .tnce-holiday-label--month,
+.tnc-dg--compact .tnce-holiday-label--month {
+	display: none;
+}
+
+.tnce-holiday-label--dh {
+	display: block;
+	max-width: 100%;
+	margin-top: 1px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+	text-align: center;
+	font-size: var(--tn-type-2xs, 10px);
+	font-weight: 500;
+	line-height: 1.2;
+	color: var(--tnce-holiday-color);
+}
+
+.tnce-holiday-label--list {
+	margin-inline-start: 8px;
+	font-size: var(--font-ui-smaller, 12px);
+	font-weight: 500;
+	color: var(--tnce-holiday-color);
+}
+
+.tnce-settings-disclosure {
+	border-top: 1px solid var(--background-modifier-border);
+	padding-top: 10px;
+	margin-top: 4px;
+}
+
+.tnce-settings-disclosure-summary {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 6px 8px;
+	border-radius: var(--radius-s, 4px);
+	cursor: var(--cursor-link, pointer);
+	font-weight: var(--font-medium, 500);
+	color: var(--text-normal);
+	user-select: none;
+}
+
+.tnce-settings-disclosure-summary:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.tnce-settings-disclosure-count {
+	font-size: var(--font-ui-smaller, 12px);
+	color: var(--text-muted);
+	font-weight: var(--font-normal, 400);
+}
+
+.tnce-settings-disclosure-body {
+	padding-left: 12px;
+	margin-top: 6px;
+}
