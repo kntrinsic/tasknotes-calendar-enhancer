@@ -236,3 +236,44 @@
 		min-height: 44px;
 	}
 }
+
+/* ==========================================================================
+   Phase 3: Mobile Month View Tap Targets
+   ========================================================================== */
+
+body.tnce-mobile-month-tap
+	.advanced-calendar-view
+	#bases-calendar:not(.tn-calendar-composition)
+	.tnc-dg--chips
+	.tnc-dg-dots
+	> .tnc-item--indicator {
+	pointer-events: auto;
+	cursor: var(--cursor-link, pointer);
+}
+
+body.tnce-mobile-month-tap
+	.advanced-calendar-view
+	#bases-calendar:not(.tn-calendar-composition)
+	.tnc-dg--chips
+	.tnc-dg-dots
+	> .tnc-item--indicator:hover {
+	filter: brightness(0.95);
+}
+
+body.tnce-mobile-month-tap
+	.advanced-calendar-view
+	#bases-calendar:not(.tn-calendar-composition)
+	.tnc-dg--chips
+	.tnc-dg-dots
+	> .tnc-item--indicator:focus-visible {
+	outline: 2px solid var(--background-modifier-border-focus);
+	outline-offset: -1px;
+}
+
+body.tnce-mobile-month-tap
+	.advanced-calendar-view
+	#bases-calendar:not(.tn-calendar-composition)
+	.tnc-dg--dots:not(.tnc-dg--chips):not(.tnc-dg--compact)
+	.tnc-dg-day:has(.tnc-item--indicator) {
+	cursor: var(--cursor-link, pointer);
+}
