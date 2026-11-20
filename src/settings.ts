@@ -27,6 +27,7 @@ export interface TaskNotesCalendarEnhancerSettings {
 	enableToolbarCalendarPicker: boolean;
 	enableExternalCalendarCache: boolean;
 	enableMobileMonthTap: boolean;
+	enableMobileDayPopoverLayout: boolean;
 	enableMonthDayQuickCreate: boolean;
 	enableCustomCalendarColors: boolean;
 	calendarColorOverrides: Record<string, string>;
@@ -42,6 +43,7 @@ type BooleanSettingKey =
 	| "enableToolbarCalendarPicker"
 	| "enableExternalCalendarCache"
 	| "enableMobileMonthTap"
+	| "enableMobileDayPopoverLayout"
 	| "enableMonthDayQuickCreate"
 	| "enableCustomCalendarColors"
 	| "enableVividChipColors"
@@ -54,6 +56,7 @@ export const DEFAULT_SETTINGS: Readonly<TaskNotesCalendarEnhancerSettings> = {
 	enableToolbarCalendarPicker: true,
 	enableExternalCalendarCache: true,
 	enableMobileMonthTap: true,
+	enableMobileDayPopoverLayout: true,
 	enableMonthDayQuickCreate: true,
 	enableCustomCalendarColors: true,
 	calendarColorOverrides: {},
@@ -112,6 +115,10 @@ export function normalizeSettings(raw: unknown): TaskNotesCalendarEnhancerSettin
 			typeof record.enableMobileMonthTap === "boolean"
 				? record.enableMobileMonthTap
 				: DEFAULT_SETTINGS.enableMobileMonthTap,
+		enableMobileDayPopoverLayout:
+			typeof record.enableMobileDayPopoverLayout === "boolean"
+				? record.enableMobileDayPopoverLayout
+				: DEFAULT_SETTINGS.enableMobileDayPopoverLayout,
 		enableMonthDayQuickCreate:
 			typeof record.enableMonthDayQuickCreate === "boolean"
 				? record.enableMonthDayQuickCreate
@@ -198,6 +205,19 @@ export class TaskNotesCalendarEnhancerSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.enableMobileMonthTap)
 					.onChange((value) => {
 						this.updateToggleSetting("enableMobileMonthTap", value);
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Mobile day popover layout")
+			.setDesc(
+				"Keep rounded pill styling in the mobile day event popover while adding safe inner padding and centering icons so text and badges never clip at curved edges.",
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.enableMobileDayPopoverLayout)
+					.onChange((value) => {
+						this.updateToggleSetting("enableMobileDayPopoverLayout", value);
 					}),
 			);
 

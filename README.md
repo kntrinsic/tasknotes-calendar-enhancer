@@ -46,6 +46,10 @@ Each feature has an independent toggle in **Settings → TaskNotes Calendar Enha
 - Renders multi-day all-day and timed events as continuous horizontal bars across consecutive days of each week row in month `chips` mode (`560px–850px` / tablets), matching `full` month view while keeping `chips` height, vivid colors, 4-event limit, empty-space day popover taps, and right-click/long-press quick creation intact.
 - Automatically splits cleanly across week boundaries with continuation styling and restores stock day-by-day chips immediately when disabled or unloaded.
 
+### 10. Mobile Day Popover Layout (`enableMobileDayPopoverLayout`)
+- Applies exclusively on Obsidian Mobile (`body.is-mobile`) so desktop views remain completely untouched.
+- Preserves Obsidian mobile's rounded pill UI inside the day event list popover (`.tnc-popover`) while adding safe inner padding, vertical centering for titles and provider/selection icons, compact circular close-button alignment, and rounded-edge clipping protection so icons and text never collide with curved corners.
+
 ## Installation via BRAT
 
 This plugin is packaged for desktop and mobile (`"isDesktopOnly": false`) and distributed via **BRAT** (Beta Reviewers Auto-update Tester):

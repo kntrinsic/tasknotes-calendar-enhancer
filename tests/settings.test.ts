@@ -32,6 +32,7 @@ describe("settings", () => {
 			enableToolbarCalendarPicker: true,
 			enableExternalCalendarCache: true,
 			enableMobileMonthTap: true,
+			enableMobileDayPopoverLayout: true,
 			enableMonthDayQuickCreate: true,
 			enableCustomCalendarColors: true,
 			calendarColorOverrides: {},
@@ -58,6 +59,7 @@ describe("settings", () => {
 		expect(
 			normalizeSettings({
 				enableExternalCalendarCache: false,
+				enableMobileDayPopoverLayout: false,
 				enableMonthDayQuickCreate: false,
 				enableCustomCalendarColors: false,
 				calendarColorOverrides: {
@@ -80,6 +82,7 @@ describe("settings", () => {
 			enableToolbarCalendarPicker: true,
 			enableExternalCalendarCache: false,
 			enableMobileMonthTap: true,
+			enableMobileDayPopoverLayout: false,
 			enableMonthDayQuickCreate: false,
 			enableCustomCalendarColors: false,
 			calendarColorOverrides: {
@@ -100,6 +103,7 @@ describe("settings", () => {
 				enableToolbarCalendarPicker: "false",
 				enableExternalCalendarCache: 0,
 				enableMobileMonthTap: null,
+				enableMobileDayPopoverLayout: "false",
 				enableMonthDayQuickCreate: 1,
 				enableCustomCalendarColors: "true",
 				calendarColorOverrides: ["bad"],
@@ -125,6 +129,7 @@ describe("settings", () => {
 			enableToolbarCalendarPicker: false,
 			enableExternalCalendarCache: true,
 			enableMobileMonthTap: true,
+			enableMobileDayPopoverLayout: true,
 			enableMonthDayQuickCreate: true,
 			enableCustomCalendarColors: true,
 			calendarColorOverrides: {},
@@ -228,8 +233,9 @@ describe("settings", () => {
 		const tab = tabInstance as unknown as DisplayableTab;
 		tab.display();
 
-		// 9 main feature toggles + 1 built-in Japanese holidays toggle + 1 external holiday calendar toggle
-		expect(toggleHandlers).toHaveLength(11);
+		// 10 main feature toggles + 1 built-in Japanese holidays toggle + 1 external holiday calendar toggle
+		expect(toggleHandlers).toHaveLength(12);
+		expect(settingNames).toContain("Mobile day popover layout");
 		expect(settingNames).toContain("Vivid month chip colors");
 		expect(settingNames).toContain("Limit month chips to 4 events");
 		expect(settingNames).toContain("Span multi-day events in month chips");
@@ -253,7 +259,7 @@ describe("settings", () => {
 		expect(disclosureCount?.textContent).toBe("1 available");
 
 		// Selecting external holiday calendar invokes setHolidayCalendarSelected and updates summary in-place
-		toggleHandlers[10]?.(true);
+		toggleHandlers[11]?.(true);
 		await Promise.resolve();
 		expect(setHolidayCalendarSelected).toHaveBeenCalledWith("microsoft", "ms-1", true);
 		expect(disclosureCount?.textContent).toBe("1 of 1 selected");
@@ -280,7 +286,7 @@ describe("settings", () => {
 		await Promise.resolve();
 		expect(clearAllCalendarColorOverrides).toHaveBeenCalledTimes(1);
 
-		const quickCreateHandler = toggleHandlers[3];
+		const quickCreateHandler = toggleHandlers[4];
 		if (!quickCreateHandler) {
 			throw new Error("Expected quick create toggle handler");
 		}
