@@ -36,6 +36,7 @@ describe("settings", () => {
 			enableCustomCalendarColors: true,
 			calendarColorOverrides: {},
 			enableVividChipColors: true,
+			enableMonthChipLimit: true,
 			enableWeekendHolidayColors: true,
 			enableJapaneseHolidays: true,
 			holidayCalendarKeys: [],
@@ -64,6 +65,7 @@ describe("settings", () => {
 					[buildCalendarColorKey("microsoft", "bad")]: "not-hex",
 				},
 				enableVividChipColors: false,
+				enableMonthChipLimit: false,
 				enableWeekendHolidayColors: false,
 				enableJapaneseHolidays: false,
 				holidayCalendarKeys: [
@@ -82,6 +84,7 @@ describe("settings", () => {
 				[validKey]: "#aabbcc",
 			},
 			enableVividChipColors: false,
+			enableMonthChipLimit: false,
 			enableWeekendHolidayColors: false,
 			enableJapaneseHolidays: false,
 			holidayCalendarKeys: [validHolidayKey],
@@ -98,6 +101,7 @@ describe("settings", () => {
 				enableCustomCalendarColors: "true",
 				calendarColorOverrides: ["bad"],
 				enableVividChipColors: "yes",
+				enableMonthChipLimit: 0,
 				enableWeekendHolidayColors: "yes",
 				enableJapaneseHolidays: 0,
 				holidayCalendarKeys: "not-array",
@@ -121,6 +125,7 @@ describe("settings", () => {
 			enableCustomCalendarColors: true,
 			calendarColorOverrides: {},
 			enableVividChipColors: true,
+			enableMonthChipLimit: true,
 			enableWeekendHolidayColors: true,
 			enableJapaneseHolidays: true,
 			holidayCalendarKeys: [],
@@ -218,9 +223,10 @@ describe("settings", () => {
 		const tab = tabInstance as unknown as DisplayableTab;
 		tab.display();
 
-		// 7 main feature toggles + 1 built-in Japanese holidays toggle + 1 external holiday calendar toggle
-		expect(toggleHandlers).toHaveLength(9);
+		// 8 main feature toggles + 1 built-in Japanese holidays toggle + 1 external holiday calendar toggle
+		expect(toggleHandlers).toHaveLength(10);
 		expect(settingNames).toContain("Vivid month chip colors");
+		expect(settingNames).toContain("Limit month chips to 4 events");
 		expect(settingNames).toContain("Weekend & holiday colors");
 		expect(settingNames).toContain("Built-in Japanese holidays");
 		expect(settingNames).toContain("Custom calendar colors");
@@ -241,7 +247,7 @@ describe("settings", () => {
 		expect(disclosureCount?.textContent).toBe("1 available");
 
 		// Selecting external holiday calendar invokes setHolidayCalendarSelected and updates summary in-place
-		toggleHandlers[8]?.(true);
+		toggleHandlers[9]?.(true);
 		await Promise.resolve();
 		expect(setHolidayCalendarSelected).toHaveBeenCalledWith("microsoft", "ms-1", true);
 		expect(disclosureCount?.textContent).toBe("1 of 1 selected");

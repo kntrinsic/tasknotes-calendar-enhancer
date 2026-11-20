@@ -31,6 +31,7 @@ export interface TaskNotesCalendarEnhancerSettings {
 	enableCustomCalendarColors: boolean;
 	calendarColorOverrides: Record<string, string>;
 	enableVividChipColors: boolean;
+	enableMonthChipLimit: boolean;
 	enableWeekendHolidayColors: boolean;
 	enableJapaneseHolidays: boolean;
 	holidayCalendarKeys: string[];
@@ -43,6 +44,7 @@ type BooleanSettingKey =
 	| "enableMonthDayQuickCreate"
 	| "enableCustomCalendarColors"
 	| "enableVividChipColors"
+	| "enableMonthChipLimit"
 	| "enableWeekendHolidayColors"
 	| "enableJapaneseHolidays";
 
@@ -54,6 +56,7 @@ export const DEFAULT_SETTINGS: Readonly<TaskNotesCalendarEnhancerSettings> = {
 	enableCustomCalendarColors: true,
 	calendarColorOverrides: {},
 	enableVividChipColors: true,
+	enableMonthChipLimit: true,
 	enableWeekendHolidayColors: true,
 	enableJapaneseHolidays: true,
 	holidayCalendarKeys: [],
@@ -119,6 +122,10 @@ export function normalizeSettings(raw: unknown): TaskNotesCalendarEnhancerSettin
 			typeof record.enableVividChipColors === "boolean"
 				? record.enableVividChipColors
 				: DEFAULT_SETTINGS.enableVividChipColors,
+		enableMonthChipLimit:
+			typeof record.enableMonthChipLimit === "boolean"
+				? record.enableMonthChipLimit
+				: DEFAULT_SETTINGS.enableMonthChipLimit,
 		enableWeekendHolidayColors:
 			typeof record.enableWeekendHolidayColors === "boolean"
 				? record.enableWeekendHolidayColors
@@ -225,6 +232,19 @@ export class TaskNotesCalendarEnhancerSettingTab extends PluginSettingTab {
 					.setValue(this.plugin.settings.enableVividChipColors)
 					.onChange((value) => {
 						this.updateToggleSetting("enableVividChipColors", value);
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Limit month chips to 4 events")
+			.setDesc(
+				"Show “+N” on month chips whenever a day has 5 or more events (maximum 4 events displayed directly).",
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.enableMonthChipLimit)
+					.onChange((value) => {
+						this.updateToggleSetting("enableMonthChipLimit", value);
 					}),
 			);
 

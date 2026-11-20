@@ -17,8 +17,8 @@ Each feature has an independent toggle in **Settings → TaskNotes Calendar Enha
 - Preserves stale cache cleanly across offline startups, purges automatically on sign-out/disconnect/session expiry, and includes a **Clear calendar cache** button in plugin settings.
 
 ### 3. Mobile Month View Tap Details (`enableMobileMonthTap`)
-- Restores tap interaction on month `chips` indicators (`560px–850px` width) and narrow/compact dot cells (`< 560px`) when `showMonthDayPanel` is off so tapping opens task details or the day's event popover cleanly.
-- Leaves swipes, drag-and-drop, selection mode, and `showMonthDayPanel: true` intact.
+- Restores tap interaction on month `chips` indicators (`560px–850px` width) and narrow/compact dot cells (`< 560px`) when `showMonthDayPanel` is off so tapping an event chip or empty space on any event-bearing day (including `+N` overflow days) opens task details or the day's event popover cleanly instead of triggering date creation.
+- Leaves swipes, drag-and-drop, selection mode, `showMonthDayPanel: true`, and long-press quick creation intact.
 
 ### 4. Month View Quick Create (`enableMonthDayQuickCreate`)
 - **Desktop right-click** or **mobile/touch long-press (`480ms`)** on a month day cell opens TaskNotes' native creation menu (`Create task`, `Create timeblock`, `Create time entry`, `Create external calendar event`) across `full`, `chips`, `dots`, `compact`, and `showMonthDayPanel: true`.
@@ -37,6 +37,10 @@ Each feature has an independent toggle in **Settings → TaskNotes Calendar Enha
 
 ### 7. Vivid Month Chip Colors (`enableVividChipColors`)
 - Enhances color contrast on TaskNotes month `chips` views (`560px–850px` width and mobile tablets/phones) by adding a solid `3px` leading calendar color bar, preserving saturated OKLCH hues, strengthening the chip tint and inset border across light/dark themes, and keeping active external calendar chips at full opacity.
+
+### 8. Month Chip Event Limit (`enableMonthChipLimit`)
+- Caps directly visible events per day at **4** in month `chips` mode so any day with **5 or more** events cleanly shows `+N` overflow (and opens the day's full list popover on `+N` or empty-space tap).
+- Applies only at runtime while `monthDisplay === "chips"` and `view.type === "month"` without modifying `.base` files (`config.set()`), restoring original `dayMaxEvents` settings on desktop `full` view, view switches, disable, or unload.
 
 ## Installation via BRAT
 
