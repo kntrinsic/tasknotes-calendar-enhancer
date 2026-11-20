@@ -277,3 +277,17 @@ body.tnce-mobile-month-tap
 	.tnc-dg-day:has(.tnc-item--indicator) {
 	cursor: var(--cursor-link, pointer);
 }
+
+/* ==========================================================================
+   Phase 4.5: Month View Quick Create (Long-press / Right-click)
+   ========================================================================== */
+
+body.tnce-month-quick-create
+	.advanced-calendar-view
+	#bases-calendar
+	.tnc-dg
+	.tnc-dg-day {
+	-webkit-touch-callout: none;
+	-webkit-user-select: none;
+	user-select: none;
+}
