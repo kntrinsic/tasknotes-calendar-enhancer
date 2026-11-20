@@ -1,0 +1,13 @@
+node_modules/
+main.js
+*.js.map
+data.json
+tasknotes-test-vault/
+coverage/
+dist/
+.DS_Store
+Thumbs.db
+*.log
+npm-debug.log*
+.env
+.env.*

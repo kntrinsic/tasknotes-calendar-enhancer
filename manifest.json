@@ -1,0 +1,10 @@
+{
+	"id": "tasknotes-calendar-enhancer",
+	"name": "TaskNotes Calendar Enhancer",
+	"version": "0.0.1",
+	"minAppVersion": "1.13.1",
+	"description": "Companion plugin for TaskNotes with a Bases toolbar calendar picker, local startup cache for external calendars, and mobile month tap improvements.",
+	"author": "kntrinsic",
+	"authorUrl": "https://github.com/kntrinsic",
+	"isDesktopOnly": false
+}
