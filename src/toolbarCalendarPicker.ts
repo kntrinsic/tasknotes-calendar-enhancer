@@ -340,24 +340,30 @@ export class ToolbarCalendarPicker {
 
 		buttonEl.addEventListener("click", (event) => {
 			event.stopPropagation();
-			this.togglePopover(entry);
+			try {
+				this.togglePopover(entry);
+			} catch (error) {
+				console.warn("Failed to toggle calendar picker popover:", error);
+			}
 		});
 
 		return entry;
 	}
 
 	/**
-	 * Places the calendar picker right before `.tn-bases-new-task-btn` (after `.tn-bases-toolbar-more`)
-	 * so narrow-screen overflow spacing (`margin-inline-start: auto` on `.tn-bases-toolbar-more`) stays intact.
+	 * Places the calendar picker directly before `.tn-shortcut-help` (or `.tn-bases-new-task-btn`
+	 * when no help button is mounted), staying after `.tn-bases-toolbar-more` without competing
+	 * with TaskNotes' `placeHelp()` observer that anchors `.tn-shortcut-help` before `.tn-bases-new-task-btn`.
 	 */
 	private ensureButtonPlacement(toolbarEl: HTMLElement, wrapperEl: HTMLDivElement): void {
-		const newTaskBtn = toolbarEl.querySelector<HTMLElement>(":scope > .tn-bases-new-task-btn");
-		const nativeNewBtn =
-			newTaskBtn ?? toolbarEl.querySelector<HTMLElement>(":scope > .bases-toolbar-new-item-menu");
+		const anchor =
+			toolbarEl.querySelector<HTMLElement>(":scope > .tn-shortcut-help") ??
+			toolbarEl.querySelector<HTMLElement>(":scope > .tn-bases-new-task-btn") ??
+			toolbarEl.querySelector<HTMLElement>(":scope > .bases-toolbar-new-item-menu");
 
-		if (nativeNewBtn) {
-			if (wrapperEl.parentElement !== toolbarEl || wrapperEl.nextElementSibling !== nativeNewBtn) {
-				nativeNewBtn.before(wrapperEl);
+		if (anchor) {
+			if (wrapperEl.parentElement !== toolbarEl || wrapperEl.nextElementSibling !== anchor) {
+				anchor.before(wrapperEl);
 			}
 			return;
 		}
