@@ -241,6 +241,90 @@ describe("ToolbarCalendarPicker", () => {
 		expect(newTaskIndex).toBe(pickerIndex + 1);
 	});
 
+	it("converges without DOM ping-pong alongside TaskNotes .tn-shortcut-help observer and overflow panel", async () => {
+		const harness = createHarness({
+			includeMoreBtn: true,
+			includeNewTaskBtn: true,
+			icsSubscriptions: [{ id: "ics-1", name: "Work", enabled: true }],
+		});
+		const newTaskBtn = harness.toolbarEl.querySelector<HTMLElement>(".tn-bases-new-task-btn");
+		expect(newTaskBtn).not.toBeNull();
+
+		const helpBtn = document.createElement("button");
+		helpBtn.className = "tn-shortcut-help clickable-icon";
+		newTaskBtn?.before(helpBtn);
+
+		const overflowPanel = document.createElement("div");
+		overflowPanel.className = "tn-bases-toolbar-overflow-panel";
+		document.body.appendChild(overflowPanel);
+
+		let toolbarMutations = 0;
+		const chromeObserver = new MutationObserver(() => {
+			toolbarMutations += 1;
+			if (helpBtn.closest(".tn-bases-toolbar-overflow-panel")) {
+				return;
+			}
+			if (newTaskBtn && helpBtn.nextElementSibling !== newTaskBtn) {
+				newTaskBtn.before(helpBtn);
+			}
+		});
+		chromeObserver.observe(harness.toolbarEl.parentElement as HTMLElement, {
+			childList: true,
+			subtree: true,
+		});
+
+		try {
+			picker = new ToolbarCalendarPicker(harness.app);
+			picker.enable();
+
+			await new Promise((resolve) => setTimeout(resolve, 50));
+
+			expect(toolbarMutations).toBeLessThan(10);
+			const children = [...harness.toolbarEl.children];
+			const moreIndex = children.findIndex((el) =>
+				el.classList.contains("tn-bases-toolbar-more"),
+			);
+			const pickerIndex = children.findIndex((el) =>
+				el.classList.contains(TOOLBAR_BUTTON_WRAPPER_CLASS),
+			);
+			const helpIndex = children.findIndex((el) =>
+				el.classList.contains("tn-shortcut-help"),
+			);
+			const newTaskIndex = children.findIndex((el) =>
+				el.classList.contains("tn-bases-new-task-btn"),
+			);
+			expect(moreIndex).toBeGreaterThanOrEqual(0);
+			expect(pickerIndex).toBe(moreIndex + 1);
+			expect(helpIndex).toBe(pickerIndex + 1);
+			expect(newTaskIndex).toBe(helpIndex + 1);
+
+			const toggleBtn = harness.toolbarEl.querySelector<HTMLButtonElement>(
+				".tnce-calendar-toggle-button",
+			);
+			toggleBtn?.click();
+			expect(document.body.querySelector(`.${POPOVER_CLASS}`)).not.toBeNull();
+
+			// Simulate TaskNotes narrow-screen overflow moving .tn-shortcut-help out and back.
+			const mutationsBeforeOverflow = toolbarMutations;
+			const placeholder = document.createComment("");
+			helpBtn.before(placeholder);
+			overflowPanel.appendChild(helpBtn);
+			await new Promise((resolve) => setTimeout(resolve, 30));
+
+			const pickerWrapper = harness.toolbarEl.querySelector<HTMLElement>(
+				`.${TOOLBAR_BUTTON_WRAPPER_CLASS}`,
+			);
+			expect(pickerWrapper?.nextElementSibling).toBe(newTaskBtn);
+
+			placeholder.replaceWith(helpBtn);
+			await new Promise((resolve) => setTimeout(resolve, 30));
+			expect(pickerWrapper?.nextElementSibling).toBe(helpBtn);
+			expect(toolbarMutations - mutationsBeforeOverflow).toBeLessThan(10);
+		} finally {
+			chromeObserver.disconnect();
+		}
+	});
+
 	it("removes button when switching away from tasknotesCalendar", () => {
 		const harness = createHarness();
 		picker = new ToolbarCalendarPicker(harness.app);
