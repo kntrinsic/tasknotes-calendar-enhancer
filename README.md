@@ -24,6 +24,17 @@ Each feature has an independent toggle in **Settings → TaskNotes Calendar Enha
 - **Desktop right-click** or **mobile/touch long-press (`480ms`)** on a month day cell opens TaskNotes' native creation menu (`Create task`, `Create timeblock`, `Create time entry`, `Create external calendar event`) across `full`, `chips`, `dots`, `compact`, and `showMonthDayPanel: true`.
 - Suppresses post-long-press OS callouts and accidental tap-through popovers while cancelling cleanly on finger movement (`> 10px`), pinch gestures, swipes, or drags.
 
+### 5. Custom Calendar Colors (`enableCustomCalendarColors`)
+- Override individual Google, Microsoft, and ICS calendar colors across TaskNotes Calendar views without modifying upstream provider accounts (including per-calendar color differentiation for Microsoft calendars, which TaskNotes otherwise renders with a single `#0078D4` color).
+- Change colors either in **Settings → TaskNotes Calendar Enhancer → Calendar colors** or directly inside the **Calendars** toolbar popover by clicking any calendar's color dot to open an inline palette (12 presets, custom color picker, and **Reset** button).
+- Layered cleanly above the startup cache so cached upstream data remains untouched and toggling custom colors off immediately restores original provider colors.
+
+### 6. Weekend & Holiday Colors (`enableWeekendHolidayColors`)
+- Colors Saturdays blue and Sundays/holidays red across TaskNotes Calendar views (**Month**, **Week / Day / Custom Days**, **Year**, **List**, and **Agenda Strip**), with Saturday holidays prioritizing holiday red.
+- Includes a built-in **offline Japanese national holiday calculator** (`enableJapaneseHolidays`, `1948–2150`, covering fixed holidays, Happy Mondays, astronomical equinoxes, `振替休日`, `国民の休日`, and 2019–2021 special holiday legislation) with zero external network calls.
+- Supports selecting any connected Google, Microsoft, or ICS calendar as an external holiday source (`holidayCalendarKeys`, tucked inside a collapsible settings disclosure so large calendar lists stay compact).
+- Displays inline holiday name labels in Month view (centered to the left of the date number), Week/Day headers, and List day headers, plus hover tooltips on date numbers.
+
 ## Installation via BRAT
 
 This plugin is packaged for desktop and mobile (`"isDesktopOnly": false`) and distributed via **BRAT** (Beta Reviewers Auto-update Tester):
@@ -39,7 +50,7 @@ This plugin is packaged for desktop and mobile (`"isDesktopOnly": false`) and di
 ## Privacy & Security
 
 - **Zero runtime dependencies**: Does not ship third-party analytics, telemetry, or external network libraries.
-- **Device-local cache only**: Cached external calendar events and calendar metadata are stored exclusively in Obsidian's device-local `localStorage` (`app.loadLocalStorage` / `app.saveLocalStorage`) with a 7-day TTL and per-provider size/count limits—**never** inside Vault notes or `data.json`.
+- **Device-local cache & hashed settings keys**: Cached external calendar events and calendar metadata are stored exclusively in Obsidian's device-local `localStorage` (`app.loadLocalStorage` / `app.saveLocalStorage`) with a 7-day TTL and per-provider size/count limits—**never** inside Vault notes or `data.json`. Custom calendar color overrides and selected holiday calendar keys stored in `data.json` use one-way 64-bit FNV-1a hashed keys (`<provider>:<16-hex-digest>`) so raw email addresses or calendar IDs are never written to the Vault.
 - **No credential access**: Never reads, copies, or logs OAuth tokens, client secrets, or ICS passwords/URLs. ICS cache entries use a strict field whitelist (`id`, `name`, `type`, `color`, `enabled`, `refreshInterval`) and strip `url`, `filePath`, `authType`, `username`, and `filter`.
 - **Safe cleanup & XSS protection**: Never uses `innerHTML` / `outerHTML` / `insertAdjacentHTML`; cleans up all wrappers, DOM elements, listeners, and observers on `onunload()` without calling Bases `config.set()` during teardown (avoiding Bases `#1397`).
 
