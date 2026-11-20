@@ -1,0 +1,418 @@
+// @vitest-environment happy-dom
+
+import type { App } from "obsidian";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	POPOVER_CLASS,
+	sanitizeCssColor,
+	TOOLBAR_BUTTON_WRAPPER_CLASS,
+	ToolbarCalendarPicker,
+} from "../src/toolbarCalendarPicker";
+
+interface HarnessOptions {
+	viewType?: string;
+	includeMoreBtn?: boolean;
+	includeNewTaskBtn?: boolean;
+	googleCalendars?: Array<{
+		id: string;
+		summary: string;
+		primary?: boolean;
+		backgroundColor?: string;
+	}>;
+	microsoftCalendars?: Array<{
+		id: string;
+		summary: string;
+		backgroundColor?: string;
+	}>;
+	icsSubscriptions?: Array<{
+		id: string;
+		name: string;
+		enabled: boolean;
+		color?: string;
+	}>;
+	hostedAllCount?: number;
+}
+
+function createHarness(options: HarnessOptions = {}) {
+	const parentEl = document.createElement("div");
+	const toolbarEl = document.createElement("div");
+	toolbarEl.className = "bases-toolbar";
+
+	const filterEl = document.createElement("div");
+	filterEl.className = "bases-toolbar-filter-menu";
+	toolbarEl.appendChild(filterEl);
+
+	if (options.includeMoreBtn) {
+		const moreBtn = document.createElement("button");
+		moreBtn.className = "tn-bases-toolbar-more";
+		toolbarEl.appendChild(moreBtn);
+	}
+
+	if (options.includeNewTaskBtn !== false) {
+		const newTaskBtn = document.createElement("div");
+		newTaskBtn.className = "tn-bases-new-task-btn";
+		toolbarEl.appendChild(newTaskBtn);
+	}
+
+	const basesViewEl = document.createElement("div");
+	basesViewEl.className = "bases-view";
+	const containerEl = document.createElement("div");
+	basesViewEl.appendChild(containerEl);
+	parentEl.append(toolbarEl, basesViewEl);
+	document.body.appendChild(parentEl);
+
+	const configStore = new Map<string, unknown>();
+	const configSetSpy = vi.fn((key: string, value: unknown) => {
+		configStore.set(key, value);
+	});
+	const refreshSpy = vi.fn();
+	const openSettingsSpy = vi.fn();
+	const openTabByIdSpy = vi.fn();
+	const workspaceListeners = new Map<string, Set<() => void>>();
+
+	let currentViewType = options.viewType ?? "tasknotesCalendar";
+
+	const hostedGoogleService = {
+		isSignedIn: () => (options.hostedAllCount ?? 0) > 0,
+		isConnected: () => (options.hostedAllCount ?? 0) > 0,
+		getAvailableCalendars: () => options.googleCalendars ?? [],
+		getAllCalendars: () =>
+			Array.from(
+				{ length: options.hostedAllCount ?? (options.googleCalendars?.length ?? 0) },
+				(_, index) => ({ id: `cal-${String(index)}` }),
+			),
+		on: () => () => {},
+	};
+
+	const leaf = {
+		view: {
+			getViewType: () => "bases",
+			containerEl: parentEl,
+			controller: {
+				view: {
+					get type() {
+						return currentViewType;
+					},
+					containerEl,
+					config: {
+						get: (key: string) => configStore.get(key),
+						set: configSetSpy,
+					},
+					readEventToggles: vi.fn(),
+					refresh: refreshSpy,
+				},
+			},
+		},
+	};
+
+	const app = {
+		plugins: {
+			plugins: {
+				tasknotes: {
+					googleCalendarService: hostedGoogleService,
+					hostedGoogleCalendarService: hostedGoogleService,
+					microsoftCalendarService: {
+						getAvailableCalendars: () => options.microsoftCalendars ?? [],
+						on: () => () => {},
+					},
+					icsSubscriptionService: {
+						getSubscriptions: () => options.icsSubscriptions ?? [],
+						on: () => () => {},
+					},
+				},
+			},
+		},
+		workspace: {
+			getLeavesOfType: (type: string) => (type === "bases" ? [leaf] : []),
+			on: (event: string, cb: () => void) => {
+				let set = workspaceListeners.get(event);
+				if (!set) {
+					set = new Set();
+					workspaceListeners.set(event, set);
+				}
+				set.add(cb);
+				return { event, cb };
+			},
+			offref: (ref: { event: string; cb: () => void }) => {
+				workspaceListeners.get(ref.event)?.delete(ref.cb);
+			},
+			onLayoutReady: (cb: () => void) => {
+				cb();
+			},
+		},
+		setting: {
+			open: openSettingsSpy,
+			openTabById: openTabByIdSpy,
+		},
+	} as unknown as App;
+
+	return {
+		app,
+		toolbarEl,
+		containerEl,
+		configStore,
+		configSetSpy,
+		refreshSpy,
+		openSettingsSpy,
+		openTabByIdSpy,
+		setViewType: (nextType: string) => {
+			currentViewType = nextType;
+		},
+		triggerLayoutChange: () => {
+			for (const cb of workspaceListeners.get("layout-change") ?? []) {
+				cb();
+			}
+		},
+	};
+}
+
+describe("ToolbarCalendarPicker", () => {
+	let picker: ToolbarCalendarPicker | null = null;
+
+	beforeEach(() => {
+		document.body.replaceChildren();
+	});
+
+	afterEach(() => {
+		picker?.disable();
+		picker = null;
+		vi.restoreAllMocks();
+	});
+
+	it("sanitizes CSS colors and rejects injection payloads", () => {
+		expect(sanitizeCssColor("#4285F4")).toBe("#4285F4");
+		expect(sanitizeCssColor("rgb(10, 20, 30)")).toBe("rgb(10, 20, 30)");
+		expect(sanitizeCssColor("red; background-image: url(evil)")).toBeNull();
+		expect(sanitizeCssColor("expression(alert(1))")).toBeNull();
+	});
+
+	it("places calendar button directly before .tn-bases-new-task-btn and after .tn-bases-toolbar-more", () => {
+		const harness = createHarness({
+			includeMoreBtn: true,
+			includeNewTaskBtn: true,
+		});
+		picker = new ToolbarCalendarPicker(harness.app);
+		picker.enable();
+
+		const children = [...harness.toolbarEl.children];
+		const moreIndex = children.findIndex((el) =>
+			el.classList.contains("tn-bases-toolbar-more"),
+		);
+		const pickerIndex = children.findIndex((el) =>
+			el.classList.contains(TOOLBAR_BUTTON_WRAPPER_CLASS),
+		);
+		const newTaskIndex = children.findIndex((el) =>
+			el.classList.contains("tn-bases-new-task-btn"),
+		);
+
+		expect(moreIndex).toBeGreaterThanOrEqual(0);
+		expect(pickerIndex).toBe(moreIndex + 1);
+		expect(newTaskIndex).toBe(pickerIndex + 1);
+	});
+
+	it("keeps button after .tn-bases-toolbar-more when TaskNotes injects overflow control later", async () => {
+		const harness = createHarness({
+			includeMoreBtn: false,
+			includeNewTaskBtn: true,
+		});
+		picker = new ToolbarCalendarPicker(harness.app);
+		picker.enable();
+
+		const newTaskBtn = harness.toolbarEl.querySelector<HTMLElement>(".tn-bases-new-task-btn");
+		expect(newTaskBtn).not.toBeNull();
+
+		const moreBtn = document.createElement("button");
+		moreBtn.className = "tn-bases-toolbar-more";
+		newTaskBtn?.before(moreBtn);
+
+		await new Promise((resolve) => setTimeout(resolve, 20));
+
+		const children = [...harness.toolbarEl.children];
+		const moreIndex = children.findIndex((el) =>
+			el.classList.contains("tn-bases-toolbar-more"),
+		);
+		const pickerIndex = children.findIndex((el) =>
+			el.classList.contains(TOOLBAR_BUTTON_WRAPPER_CLASS),
+		);
+		const newTaskIndex = children.findIndex((el) =>
+			el.classList.contains("tn-bases-new-task-btn"),
+		);
+		expect(pickerIndex).toBe(moreIndex + 1);
+		expect(newTaskIndex).toBe(pickerIndex + 1);
+	});
+
+	it("removes button when switching away from tasknotesCalendar", () => {
+		const harness = createHarness();
+		picker = new ToolbarCalendarPicker(harness.app);
+		picker.enable();
+
+		expect(
+			harness.toolbarEl.querySelector(`.${TOOLBAR_BUTTON_WRAPPER_CLASS}`),
+		).not.toBeNull();
+
+		harness.setViewType("tasknotesMiniCalendar");
+		picker.syncAllToolbars();
+
+		expect(
+			harness.toolbarEl.querySelector(`.${TOOLBAR_BUTTON_WRAPPER_CLASS}`),
+		).toBeNull();
+	});
+
+	it("renders grouped calendars safely, toggles individual & batch visibility, and updates badge", () => {
+		const xssName = "<img src=x onerror=alert(1)>";
+		const harness = createHarness({
+			googleCalendars: [
+				{ id: "primary", summary: xssName, backgroundColor: "#4285f4" },
+			],
+			microsoftCalendars: [
+				{ id: "ms-1", summary: "Outlook", backgroundColor: "javascript:evil" },
+			],
+			icsSubscriptions: [
+				{ id: "ics-1", name: "Holidays", enabled: true, color: "#00aa88" },
+				{ id: "ics-off", name: "Disabled", enabled: false, color: "#111111" },
+			],
+		});
+
+		picker = new ToolbarCalendarPicker(harness.app);
+		picker.enable();
+
+		const toggleBtn = harness.toolbarEl.querySelector<HTMLButtonElement>(
+			".tnce-calendar-toggle-button",
+		);
+		expect(toggleBtn).not.toBeNull();
+		toggleBtn?.click();
+
+		const popover = document.body.querySelector<HTMLDivElement>(`.${POPOVER_CLASS}`);
+		expect(popover).not.toBeNull();
+		expect(popover?.getAttribute("role")).toBe("dialog");
+		expect(popover?.querySelector("img")).toBeNull();
+
+		const names = [...(popover?.querySelectorAll(".tnce-calendar-picker-name") ?? [])].map(
+			(el) => el.textContent,
+		);
+		expect(names).toEqual([xssName, "Outlook", "Holidays"]);
+
+		const checkboxes = [
+			...(popover?.querySelectorAll<HTMLInputElement>(".tnce-calendar-picker-checkbox") ??
+				[]),
+		];
+		expect(checkboxes).toHaveLength(3);
+		expect(checkboxes.every((box) => box.checked)).toBe(true);
+
+		if (checkboxes[0]) {
+			checkboxes[0].checked = false;
+			checkboxes[0].dispatchEvent(new Event("change", { bubbles: true }));
+		}
+		expect(harness.configSetSpy).toHaveBeenCalledWith("showGoogleCalendar_primary", false);
+		expect(harness.refreshSpy).toHaveBeenCalledTimes(1);
+
+		const badge = harness.toolbarEl.querySelector<HTMLSpanElement>(
+			".tnce-calendar-toggle-badge",
+		);
+		expect(badge?.hidden).toBe(false);
+		expect(badge?.textContent).toBe("2/3");
+
+		const buttons = [
+			...(popover?.querySelectorAll<HTMLButtonElement>(".tnce-calendar-picker-action-btn") ??
+				[]),
+		];
+		const showAllBtn = buttons.find((btn) => btn.textContent === "Show all");
+		const hideAllBtn = buttons.find((btn) => btn.textContent === "Hide all");
+
+		hideAllBtn?.click();
+		expect(badge?.textContent).toBe("0/3");
+		expect(checkboxes.every((box) => !box.checked)).toBe(true);
+
+		showAllBtn?.click();
+		expect(badge?.hidden).toBe(true);
+		expect(checkboxes.every((box) => box.checked)).toBe(true);
+	});
+
+	it("shows hosted Google max-5 guidance without modifying TaskNotes settings", () => {
+		const harness = createHarness({
+			googleCalendars: [{ id: "g1", summary: "G1" }],
+			hostedAllCount: 9,
+		});
+		picker = new ToolbarCalendarPicker(harness.app);
+		picker.enable();
+
+		const toggleBtn = harness.toolbarEl.querySelector<HTMLButtonElement>(
+			".tnce-calendar-toggle-button",
+		);
+		toggleBtn?.click();
+
+		const note = document.body.querySelector(".tnce-calendar-picker-note");
+		expect(note?.textContent).toContain("1 of 9 Google calendars");
+
+		const settingsBtn = document.body.querySelector<HTMLButtonElement>(
+			".tnce-calendar-picker-footer .tnce-calendar-picker-link-btn",
+		);
+		settingsBtn?.click();
+		expect(harness.openSettingsSpy).toHaveBeenCalledTimes(1);
+		expect(harness.openTabByIdSpy).toHaveBeenCalledWith("tasknotes");
+		expect(document.body.querySelector(`.${POPOVER_CLASS}`)).toBeNull();
+	});
+
+	it("renders empty state when no external calendars exist", () => {
+		const harness = createHarness();
+		picker = new ToolbarCalendarPicker(harness.app);
+		picker.enable();
+
+		harness.toolbarEl
+			.querySelector<HTMLButtonElement>(".tnce-calendar-toggle-button")
+			?.click();
+
+		const emptyText = document.body.querySelector(".tnce-calendar-picker-empty-text");
+		expect(emptyText?.textContent).toContain("No external calendars");
+	});
+
+	it("closes popover on Escape (restoring focus) and outside pointerdown", () => {
+		const harness = createHarness({
+			icsSubscriptions: [{ id: "ics-1", name: "Work", enabled: true }],
+		});
+		picker = new ToolbarCalendarPicker(harness.app);
+		picker.enable();
+
+		const toggleBtn = harness.toolbarEl.querySelector<HTMLButtonElement>(
+			".tnce-calendar-toggle-button",
+		);
+		expect(toggleBtn).not.toBeNull();
+		const focusSpy = vi.spyOn(toggleBtn as HTMLButtonElement, "focus");
+
+		toggleBtn?.click();
+		expect(document.body.querySelector(`.${POPOVER_CLASS}`)).not.toBeNull();
+
+		document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+		expect(document.body.querySelector(`.${POPOVER_CLASS}`)).toBeNull();
+		expect(toggleBtn?.getAttribute("aria-expanded")).toBe("false");
+		expect(focusSpy).toHaveBeenCalledTimes(1);
+
+		toggleBtn?.click();
+		expect(document.body.querySelector(`.${POPOVER_CLASS}`)).not.toBeNull();
+
+		document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+		expect(document.body.querySelector(`.${POPOVER_CLASS}`)).toBeNull();
+	});
+
+	it("removes all injected DOM and never calls config.set on disable()", () => {
+		const harness = createHarness({
+			icsSubscriptions: [{ id: "ics-1", name: "Work", enabled: true }],
+		});
+		picker = new ToolbarCalendarPicker(harness.app);
+		picker.enable();
+
+		harness.toolbarEl
+			.querySelector<HTMLButtonElement>(".tnce-calendar-toggle-button")
+			?.click();
+		expect(document.body.querySelector(`.${POPOVER_CLASS}`)).not.toBeNull();
+
+		harness.configSetSpy.mockClear();
+		picker.disable();
+
+		expect(
+			harness.toolbarEl.querySelector(`.${TOOLBAR_BUTTON_WRAPPER_CLASS}`),
+		).toBeNull();
+		expect(document.body.querySelector(`.${POPOVER_CLASS}`)).toBeNull();
+		expect(harness.configSetSpy).not.toHaveBeenCalled();
+	});
+});
