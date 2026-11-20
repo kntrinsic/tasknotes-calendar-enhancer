@@ -1,12 +1,16 @@
 import { Plugin } from "obsidian";
 import {
+	clearAllExternalCalendarCacheStorage,
+	ExternalCalendarCacheController,
+} from "./externalCalendarCache";
+import { MobileMonthTapController } from "./mobileMonthTap";
+import {
 	DEFAULT_SETTINGS,
 	normalizeSettings,
 	type SettingsPluginHost,
 	type TaskNotesCalendarEnhancerSettings,
 	TaskNotesCalendarEnhancerSettingTab,
 } from "./settings";
-import { MobileMonthTapController } from "./mobileMonthTap";
 import { ToolbarCalendarPicker } from "./toolbarCalendarPicker";
 
 /**
@@ -18,6 +22,7 @@ export default class TaskNotesCalendarEnhancerPlugin
 {
 	settings: TaskNotesCalendarEnhancerSettings = { ...DEFAULT_SETTINGS };
 	private isLoaded = false;
+	private externalCalendarCache: ExternalCalendarCacheController | null = null;
 	private toolbarCalendarPicker: ToolbarCalendarPicker | null = null;
 	private mobileMonthTap: MobileMonthTapController | null = null;
 
@@ -49,6 +54,13 @@ export default class TaskNotesCalendarEnhancerPlugin
 			return;
 		}
 
+		if (this.settings.enableExternalCalendarCache) {
+			this.externalCalendarCache ??= new ExternalCalendarCacheController(this.app);
+			this.externalCalendarCache.enable();
+		} else {
+			this.externalCalendarCache?.disable();
+		}
+
 		if (this.settings.enableToolbarCalendarPicker) {
 			this.toolbarCalendarPicker ??= new ToolbarCalendarPicker(this.app);
 			this.toolbarCalendarPicker.enable();
@@ -65,7 +77,8 @@ export default class TaskNotesCalendarEnhancerPlugin
 	}
 
 	clearCalendarCache(): Promise<void> {
-		// Phase 4 will remove device-local external calendar cache entries here.
+		this.externalCalendarCache?.clearAll();
+		clearAllExternalCalendarCacheStorage(this.app);
 		return Promise.resolve();
 	}
 
@@ -75,5 +88,7 @@ export default class TaskNotesCalendarEnhancerPlugin
 		this.toolbarCalendarPicker = null;
 		this.mobileMonthTap?.disable();
 		this.mobileMonthTap = null;
+		this.externalCalendarCache?.disable();
+		this.externalCalendarCache = null;
 	}
 }
