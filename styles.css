@@ -17,33 +17,83 @@
 	padding: 0;
 }
 
-.tnce-calendar-toggle-button {
+.tnce-calendar-toggle-btn > button.text-icon-button.tnce-calendar-toggle-button,
+.bases-toolbar
+	.tnce-calendar-toggle-btn
+	> button.text-icon-button.tnce-calendar-toggle-button {
 	display: inline-flex;
 	align-items: center;
 	gap: var(--size-4-1, 4px);
+	height: auto;
+	margin: 0;
 	padding: var(--size-4-1, 4px) var(--size-4-2, 8px);
 	background: transparent;
+	background-color: transparent;
 	border: none;
 	border-radius: var(--radius-s, 4px);
 	box-shadow: none;
 	color: var(--text-muted);
 	cursor: var(--cursor-link, pointer);
+	font: inherit;
 	font-size: var(--font-ui-small, 13px);
-	line-height: 1.2;
+	font-weight: var(--font-medium, 500);
+	line-height: var(--line-height-tight, 1.3);
+	white-space: nowrap;
 }
 
-.tnce-calendar-toggle-button:hover {
+.tnce-calendar-toggle-btn .text-button-icon,
+.bases-toolbar .tnce-calendar-toggle-btn .text-button-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+
+.tnce-calendar-toggle-btn .text-button-icon svg.svg-icon,
+.bases-toolbar .tnce-calendar-toggle-btn .text-button-icon svg.svg-icon {
+	width: var(--icon-xs, 14px);
+	height: var(--icon-xs, 14px);
+}
+
+.tnce-calendar-toggle-btn > button.text-icon-button.tnce-calendar-toggle-button.is-filtered,
+.bases-toolbar
+	.tnce-calendar-toggle-btn
+	> button.text-icon-button.tnce-calendar-toggle-button.is-filtered {
+	background: transparent;
+	background-color: transparent;
+	color: var(--text-accent);
+}
+
+.tnce-calendar-toggle-btn > button.text-icon-button.tnce-calendar-toggle-button:hover,
+.tnce-calendar-toggle-btn > button.text-icon-button.tnce-calendar-toggle-button:active,
+.tnce-calendar-toggle-btn
+	> button.text-icon-button.tnce-calendar-toggle-button[aria-expanded="true"],
+.tnce-calendar-toggle-btn
+	> button.text-icon-button.tnce-calendar-toggle-button.has-active-menu,
+.bases-toolbar
+	.tnce-calendar-toggle-btn
+	> button.text-icon-button.tnce-calendar-toggle-button:hover,
+.bases-toolbar
+	.tnce-calendar-toggle-btn
+	> button.text-icon-button.tnce-calendar-toggle-button:active,
+.bases-toolbar
+	.tnce-calendar-toggle-btn
+	> button.text-icon-button.tnce-calendar-toggle-button[aria-expanded="true"],
+.bases-toolbar
+	.tnce-calendar-toggle-btn
+	> button.text-icon-button.tnce-calendar-toggle-button.has-active-menu {
 	background: var(--background-modifier-hover);
+	background-color: var(--background-modifier-hover);
+	box-shadow: none;
 	color: var(--text-normal);
 }
 
-.tnce-calendar-toggle-button:focus-visible {
-	outline: 2px solid var(--background-modifier-border-focus);
-	outline-offset: 2px;
-}
-
-.tnce-calendar-toggle-button.is-filtered {
-	color: var(--interactive-accent);
+.tnce-calendar-toggle-btn > button.text-icon-button.tnce-calendar-toggle-button:focus-visible,
+.bases-toolbar
+	.tnce-calendar-toggle-btn
+	> button.text-icon-button.tnce-calendar-toggle-button:focus-visible {
+	outline: none;
+	box-shadow: 0 0 0 2px var(--background-modifier-border-focus);
 }
 
 .tnce-calendar-toggle-badge {
@@ -68,7 +118,10 @@
 		display: none;
 	}
 
-	.tnce-calendar-toggle-button {
+	.tnce-calendar-toggle-btn > button.text-icon-button.tnce-calendar-toggle-button,
+	.bases-toolbar
+		.tnce-calendar-toggle-btn
+		> button.text-icon-button.tnce-calendar-toggle-button {
 		justify-content: center;
 		min-width: var(--tn-touch-target, 44px);
 		min-height: var(--tn-touch-target, 44px);
@@ -77,16 +130,18 @@
 	}
 }
 
-.tnce-calendar-picker-popover {
+.menu.tnce-calendar-picker-popover {
 	z-index: var(--layer-menu, 65);
 	width: min(300px, calc(100vw - 16px));
 	max-height: min(420px, calc(100vh - 32px));
 	display: flex;
 	flex-direction: column;
-	background: var(--background-primary);
-	border: 1px solid var(--background-modifier-border);
+	gap: 0;
+	padding: var(--size-2-3, 6px);
+	background-color: var(--background-secondary);
+	border: 1px solid var(--background-modifier-border-hover);
 	border-radius: var(--radius-m, 8px);
-	box-shadow: var(--shadow-s, 0 4px 16px rgba(0, 0, 0, 0.2));
+	box-shadow: var(--shadow-s, 0 2px 8px var(--background-modifier-box-shadow));
 	color: var(--text-normal);
 	font-size: var(--font-ui-small, 13px);
 	overflow: hidden;
@@ -97,90 +152,96 @@
 	align-items: center;
 	justify-content: space-between;
 	gap: var(--size-4-2, 8px);
-	padding: 10px 12px;
+	padding: 4px 8px 6px;
 	border-bottom: 1px solid var(--background-modifier-border);
 }
 
 .tnce-calendar-picker-title {
-	font-weight: 600;
+	font-size: var(--font-ui-small, 13px);
+	font-weight: var(--font-semibold, 600);
 	color: var(--text-normal);
 }
 
 .tnce-calendar-picker-actions {
 	display: flex;
 	align-items: center;
-	gap: 6px;
+	gap: 2px;
 }
 
-.tnce-calendar-picker-action-btn,
-.tnce-calendar-picker-link-btn {
+.menu.tnce-calendar-picker-popover button.tnce-calendar-picker-action-btn,
+.menu.tnce-calendar-picker-popover button.tnce-calendar-picker-link-btn {
 	background: transparent;
+	background-color: transparent;
 	border: none;
 	border-radius: var(--radius-s, 4px);
 	box-shadow: none;
+	height: auto;
+	margin: 0;
 	padding: 3px 6px;
-	color: var(--text-accent);
+	color: var(--text-muted);
+	font: inherit;
 	font-size: var(--font-ui-smaller, 12px);
-	cursor: pointer;
+	cursor: var(--cursor-link, pointer);
 }
 
-.tnce-calendar-picker-action-btn:hover:not(:disabled),
-.tnce-calendar-picker-link-btn:hover {
+.menu.tnce-calendar-picker-popover
+	button.tnce-calendar-picker-action-btn:hover:not(:disabled),
+.menu.tnce-calendar-picker-popover button.tnce-calendar-picker-link-btn:hover {
 	background: var(--background-modifier-hover);
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
 }
 
-.tnce-calendar-picker-action-btn:disabled {
+.menu.tnce-calendar-picker-popover button.tnce-calendar-picker-action-btn:disabled {
 	color: var(--text-faint);
 	cursor: default;
 }
 
 .tnce-calendar-picker-body {
 	overflow-y: auto;
-	padding: 8px 10px;
+	padding: 4px 0;
 	display: flex;
 	flex-direction: column;
-	gap: 10px;
+	gap: 6px;
 }
 
 .tnce-calendar-picker-group-title {
-	padding: 2px 4px 4px;
-	font-size: var(--font-ui-smaller, 11px);
-	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.04em;
+	padding: 4px 8px 2px;
+	font-size: var(--font-ui-smaller, 12px);
+	font-weight: var(--font-medium, 500);
 	color: var(--text-muted);
 }
 
 .tnce-calendar-picker-group-items {
 	display: flex;
 	flex-direction: column;
-	gap: 2px;
+	gap: 1px;
 }
 
 .tnce-calendar-picker-item {
 	display: flex;
 	align-items: center;
 	gap: 8px;
-	min-height: 36px;
-	padding: 4px 6px;
+	min-height: 30px;
+	padding: 4px 8px;
 	border-radius: var(--radius-s, 4px);
-	cursor: pointer;
+	cursor: var(--cursor-link, pointer);
 	user-select: none;
 }
 
 .tnce-calendar-picker-item:hover {
-	background: var(--background-modifier-hover);
+	background-color: var(--background-modifier-hover);
 }
 
 .tnce-calendar-picker-checkbox {
 	flex-shrink: 0;
 	margin: 0;
-	cursor: pointer;
+	cursor: var(--cursor-link, pointer);
 }
 
 .tnce-calendar-picker-color {
-	width: 10px;
-	height: 10px;
+	width: 8px;
+	height: 8px;
 	border-radius: 999px;
 	flex-shrink: 0;
 }
@@ -198,11 +259,11 @@
 }
 
 .tnce-calendar-picker-empty {
-	padding: 8px 4px;
+	padding: 6px 8px;
 	display: flex;
 	flex-direction: column;
 	align-items: flex-start;
-	gap: 6px;
+	gap: 4px;
 }
 
 .tnce-calendar-picker-empty-text,
@@ -214,25 +275,26 @@
 }
 
 .tnce-calendar-picker-footer {
-	padding: 8px 12px 10px;
+	padding: 6px 8px 2px;
+	margin-top: 4px;
 	border-top: 1px solid var(--background-modifier-border);
 	display: flex;
 	flex-direction: column;
 	align-items: flex-start;
 	gap: 4px;
-	background: var(--background-secondary);
+	background: transparent;
 }
 
 .is-mobile .tnce-calendar-picker-item,
-.is-mobile .tnce-calendar-picker-action-btn,
-.is-mobile .tnce-calendar-picker-link-btn {
+.is-mobile .menu.tnce-calendar-picker-popover button.tnce-calendar-picker-action-btn,
+.is-mobile .menu.tnce-calendar-picker-popover button.tnce-calendar-picker-link-btn {
 	min-height: 44px;
 }
 
 @media (pointer: coarse) {
 	.tnce-calendar-picker-item,
-	.tnce-calendar-picker-action-btn,
-	.tnce-calendar-picker-link-btn {
+	.menu.tnce-calendar-picker-popover button.tnce-calendar-picker-action-btn,
+	.menu.tnce-calendar-picker-popover button.tnce-calendar-picker-link-btn {
 		min-height: 44px;
 	}
 }
