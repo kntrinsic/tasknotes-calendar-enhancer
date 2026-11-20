@@ -338,8 +338,7 @@ export class ToolbarCalendarPicker {
 			handle,
 		};
 
-		buttonEl.addEventListener("click", (event) => {
-			event.stopPropagation();
+		buttonEl.addEventListener("click", () => {
 			try {
 				this.togglePopover(entry);
 			} catch (error) {

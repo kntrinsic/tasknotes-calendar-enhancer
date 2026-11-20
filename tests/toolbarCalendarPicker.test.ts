@@ -474,6 +474,21 @@ describe("ToolbarCalendarPicker", () => {
 		expect(toggleBtn?.classList.contains("has-active-menu")).toBe(true);
 		expect(toggleBtn?.getAttribute("aria-expanded")).toBe("true");
 
+		// Clicking the button again closes the popover, and click bubbles to document so other Bases menus can dismiss.
+		const docBubbleClickSpy = vi.fn();
+		document.addEventListener("click", docBubbleClickSpy);
+		try {
+			toggleBtn?.click();
+			expect(document.body.querySelector(`.${POPOVER_CLASS}`)).toBeNull();
+			expect(docBubbleClickSpy).toHaveBeenCalledTimes(1);
+
+			toggleBtn?.click();
+			expect(document.body.querySelector(`.${POPOVER_CLASS}`)).not.toBeNull();
+			expect(docBubbleClickSpy).toHaveBeenCalledTimes(2);
+		} finally {
+			document.removeEventListener("click", docBubbleClickSpy);
+		}
+
 		document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
 		expect(document.body.querySelector(`.${POPOVER_CLASS}`)).toBeNull();
 		expect(toggleWrapper?.classList.contains("has-active-menu")).toBe(false);
