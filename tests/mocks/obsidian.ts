@@ -1,5 +1,26 @@
+export interface EventRef {
+	readonly id: string;
+}
+
+export class Workspace {
+	getLeavesOfType(_viewType: string): unknown[] {
+		return [];
+	}
+
+	on(_name: string, _callback: (...args: unknown[]) => unknown): EventRef {
+		return { id: "mock-event-ref" };
+	}
+
+	offref(_ref: EventRef): void {}
+
+	onLayoutReady(callback: () => void): void {
+		callback();
+	}
+}
+
 export class App {
 	readonly vault = {};
+	readonly workspace = new Workspace();
 }
 
 export class Notice {
