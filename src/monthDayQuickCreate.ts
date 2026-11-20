@@ -1,6 +1,7 @@
 import type { App, EventRef } from "obsidian";
 import {
 	type CalendarViewHandle,
+	formatDayNumber,
 	getActiveCalendarViews,
 	getBasesLeafContainers,
 } from "./tasknotesBridge";
@@ -17,18 +18,23 @@ const IGNORED_ANCESTORS_SELECTOR = [
 	".tnc-popover",
 	".tnc-toolbar",
 	".tnc-navlink",
-	".tnc-dg-dots-more",
-	".tnc-more",
 ].join(", ");
 
 const INTERACTIVE_CONTROLS_SELECTOR =
 	'a, button, input, select, textarea, [role="button"]';
 
+const DAY_NUMBER_PATTERN = /^-?\d+$/;
+
+interface MonthCreationTarget {
+	targetEl: HTMLElement;
+	dateStr: string;
+}
+
 interface PendingLongPress {
 	pointerId: number;
 	startX: number;
 	startY: number;
-	dayCell: HTMLElement;
+	targetEl: HTMLElement;
 	dateStr: string;
 	timerId: number;
 }
@@ -53,28 +59,61 @@ function isTouchLikePointer(event: PointerEvent): boolean {
 	return event.pointerType === "touch" || event.pointerType === "pen";
 }
 
-function findRightClickDayCell(target: Element): HTMLElement | null {
-	if (!target.closest(".tnc-dg")) {
+function resolveMoreButtonTarget(target: Element): MonthCreationTarget | null {
+	const dotsMoreEl = target.closest<HTMLElement>(".tnc-dg-dots-more");
+	if (dotsMoreEl) {
+		const dayCell = dotsMoreEl.closest<HTMLElement>(".tnc-dg-day[data-date]");
+		const dateStr = dayCell?.dataset.date?.trim();
+		if (dayCell && dateStr) {
+			return { targetEl: dotsMoreEl, dateStr };
+		}
 		return null;
 	}
+
+	const fullMoreEl = target.closest<HTMLElement>(".tnc-more[data-day]");
+	if (fullMoreEl) {
+		const rawDay = fullMoreEl.dataset.day?.trim();
+		if (!rawDay || !DAY_NUMBER_PATTERN.test(rawDay)) {
+			return null;
+		}
+		const dateStr = formatDayNumber(Number(rawDay));
+		if (dateStr) {
+			return { targetEl: fullMoreEl, dateStr };
+		}
+		return null;
+	}
+
+	return null;
+}
+
+function findRightClickTarget(target: Element): MonthCreationTarget | null {
+	if (!target.closest(".tnc-dg") || target.closest(IGNORED_ANCESTORS_SELECTOR)) {
+		return null;
+	}
+	const moreTarget = resolveMoreButtonTarget(target);
+	if (moreTarget) {
+		return moreTarget;
+	}
 	if (
-		target.closest(IGNORED_ANCESTORS_SELECTOR) ||
 		target.closest(INTERACTIVE_CONTROLS_SELECTOR) ||
 		target.closest(".tnc-item")
 	) {
 		return null;
 	}
-	return target.closest<HTMLElement>(".tnc-dg-day[data-date]");
+	const dayCell = target.closest<HTMLElement>(".tnc-dg-day[data-date]");
+	const dateStr = dayCell?.dataset.date?.trim();
+	return dayCell && dateStr ? { targetEl: dayCell, dateStr } : null;
 }
 
-function findTouchLongPressDayCell(target: Element): HTMLElement | null {
-	if (!target.closest(".tnc-dg")) {
+function findTouchLongPressTarget(target: Element): MonthCreationTarget | null {
+	if (!target.closest(".tnc-dg") || target.closest(IGNORED_ANCESTORS_SELECTOR)) {
 		return null;
 	}
-	if (
-		target.closest(IGNORED_ANCESTORS_SELECTOR) ||
-		target.closest(INTERACTIVE_CONTROLS_SELECTOR)
-	) {
+	const moreTarget = resolveMoreButtonTarget(target);
+	if (moreTarget) {
+		return moreTarget;
+	}
+	if (target.closest(INTERACTIVE_CONTROLS_SELECTOR)) {
 		return null;
 	}
 
@@ -88,7 +127,9 @@ function findTouchLongPressDayCell(target: Element): HTMLElement | null {
 		}
 	}
 
-	return target.closest<HTMLElement>(".tnc-dg-day[data-date]");
+	const dayCell = target.closest<HTMLElement>(".tnc-dg-day[data-date]");
+	const dateStr = dayCell?.dataset.date?.trim();
+	return dayCell && dateStr ? { targetEl: dayCell, dateStr } : null;
 }
 
 /**
@@ -247,15 +288,14 @@ export class MonthDayQuickCreateController {
 			if (!target) {
 				return;
 			}
-			const dayCell = findRightClickDayCell(target);
-			const dateStr = dayCell?.dataset.date;
-			if (!dayCell || !dateStr) {
+			const creationTarget = findRightClickTarget(target);
+			if (!creationTarget) {
 				return;
 			}
 
 			event.preventDefault();
 			event.stopPropagation();
-			entry.handle.openDateCreationMenu(dateStr, event);
+			entry.handle.openDateCreationMenu(creationTarget.dateStr, event);
 		};
 
 		const onPointerDown = (event: PointerEvent): void => {
@@ -294,9 +334,8 @@ export class MonthDayQuickCreateController {
 				return;
 			}
 
-			const dayCell = findTouchLongPressDayCell(target);
-			const dateStr = dayCell?.dataset.date;
-			if (!dayCell || !dateStr) {
+			const creationTarget = findTouchLongPressTarget(target);
+			if (!creationTarget) {
 				return;
 			}
 
@@ -312,7 +351,7 @@ export class MonthDayQuickCreateController {
 
 				if (
 					!this.enabled ||
-					!fired.dayCell.isConnected ||
+					!fired.targetEl.isConnected ||
 					entry.handle.isSelectionModeActive() ||
 					entry.handle.isCalendarEngineDragging()
 				) {
@@ -324,7 +363,7 @@ export class MonthDayQuickCreateController {
 
 				entry.handle.unselectCalendar();
 
-				const win = fired.dayCell.ownerDocument.defaultView ?? window;
+				const win = fired.targetEl.ownerDocument.defaultView ?? window;
 				const syntheticEvent = new win.MouseEvent("contextmenu", {
 					bubbles: true,
 					cancelable: true,
@@ -339,8 +378,8 @@ export class MonthDayQuickCreateController {
 				pointerId: pressPointerId,
 				startX,
 				startY,
-				dayCell,
-				dateStr,
+				targetEl: creationTarget.targetEl,
+				dateStr: creationTarget.dateStr,
 				timerId,
 			};
 		};

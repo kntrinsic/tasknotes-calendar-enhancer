@@ -348,7 +348,12 @@ body.tnce-month-quick-create
 	.advanced-calendar-view
 	#bases-calendar
 	.tnc-dg
-	.tnc-dg-day {
+	.tnc-dg-day,
+body.tnce-month-quick-create
+	.advanced-calendar-view
+	#bases-calendar
+	.tnc-dg
+	.tnc-more {
 	-webkit-touch-callout: none;
 	-webkit-user-select: none;
 	user-select: none;

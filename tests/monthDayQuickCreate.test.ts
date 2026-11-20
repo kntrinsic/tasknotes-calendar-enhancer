@@ -9,7 +9,7 @@ import {
 	MonthDayQuickCreateController,
 	POST_LONG_PRESS_SUPPRESS_MS,
 } from "../src/monthDayQuickCreate";
-import { formatLocalDateString } from "../src/tasknotesBridge";
+import { formatLocalDateString, parseDayNumber } from "../src/tasknotesBridge";
 
 interface QuickCreateHarnessOptions {
 	gridMode?: "full" | "chips" | "dots" | "compact";
@@ -17,6 +17,7 @@ interface QuickCreateHarnessOptions {
 	selectionModeActive?: boolean;
 	draggingActive?: boolean;
 	includeMoreLink?: boolean;
+	includeFullMoreButton?: boolean;
 }
 
 function createTouchPointerEvent(
@@ -100,8 +101,25 @@ function createQuickCreateHarness(options: QuickCreateHarnessOptions = {}) {
 	if (options.includeMoreLink) {
 		moreLink = document.createElement("span");
 		moreLink.className = "tnc-dg-dots-more";
+		moreLink.setAttribute("role", "button");
 		moreLink.textContent = "+2 more";
 		dotsEl.appendChild(moreLink);
+	}
+
+	let fullMoreButton: HTMLButtonElement | null = null;
+	if (options.includeFullMoreButton) {
+		const moreLayerEl = document.createElement("div");
+		moreLayerEl.className = "tnc-more-layer";
+		fullMoreButton = document.createElement("button");
+		fullMoreButton.type = "button";
+		fullMoreButton.className = "tnc-more";
+		const dayNum = parseDayNumber("2026-11-20");
+		if (dayNum !== null) {
+			fullMoreButton.dataset.day = String(dayNum);
+		}
+		fullMoreButton.textContent = "+3 more";
+		moreLayerEl.appendChild(fullMoreButton);
+		fullLayerEl.appendChild(moreLayerEl);
 	}
 
 	dayCell.appendChild(dotsEl);
@@ -212,6 +230,7 @@ function createQuickCreateHarness(options: QuickCreateHarnessOptions = {}) {
 		chipIndicator,
 		fullEventBar,
 		moreLink,
+		fullMoreButton,
 		dayPanelItem,
 		popoverInner,
 		handleDateSelectSpy,
@@ -283,7 +302,7 @@ describe("MonthDayQuickCreateController", () => {
 		}
 	});
 
-	it("ignores desktop right-click on event items, navlinks, +more, popover, toolbar, day-panel, and selection mode", () => {
+	it("ignores desktop right-click on event items, navlinks, popover, toolbar, day-panel, and selection mode", () => {
 		const harness = createQuickCreateHarness({
 			gridMode: "chips",
 			includeMoreLink: true,
@@ -295,7 +314,6 @@ describe("MonthDayQuickCreateController", () => {
 			harness.fullEventBar,
 			harness.chipIndicator,
 			harness.navLink,
-			harness.moreLink,
 			harness.popoverInner,
 			harness.toolbarEl,
 			harness.dayPanelItem,
@@ -447,6 +465,113 @@ describe("MonthDayQuickCreateController", () => {
 		expect(harness.handleDateSelectSpy).not.toHaveBeenCalled();
 
 		controller.disable();
+	});
+
+	it("opens creation menu on desktop right-click and touch long-press on +more in chips and full modes", () => {
+		vi.useFakeTimers();
+
+		// 1. Desktop right-click & mobile long-press on chips .tnc-dg-dots-more with MobileMonthTapController active
+		const chipsHarness = createQuickCreateHarness({
+			gridMode: "chips",
+			includeMoreLink: true,
+		});
+		const mobileTap = new MobileMonthTapController(chipsHarness.app);
+		const chipsQuickCreate = new MonthDayQuickCreateController(chipsHarness.app);
+		mobileTap.enable();
+		chipsQuickCreate.enable();
+
+		const moreClickSpy = vi.fn();
+		chipsHarness.moreLink?.addEventListener("click", moreClickSpy);
+
+		const rightClick = new MouseEvent("contextmenu", {
+			bubbles: true,
+			cancelable: true,
+			button: 2,
+			clientX: 90,
+			clientY: 130,
+		});
+		chipsHarness.moreLink?.dispatchEvent(rightClick);
+		expect(rightClick.defaultPrevented).toBe(true);
+		expect(chipsHarness.handleDateSelectSpy).toHaveBeenCalledTimes(1);
+		expect(
+			(chipsHarness.handleDateSelectSpy.mock.calls[0]?.[0] as { startStr: string }).startStr,
+		).toBe("2026-11-20");
+
+		// Short tap cancels long-press and lets click reach +more
+		chipsHarness.moreLink?.dispatchEvent(
+			createTouchPointerEvent("pointerdown", { pointerId: 21 }),
+		);
+		vi.advanceTimersByTime(LONG_PRESS_DELAY_MS - 100);
+		chipsHarness.moreLink?.dispatchEvent(
+			createTouchPointerEvent("pointerup", { pointerId: 21 }),
+		);
+		chipsHarness.moreLink?.dispatchEvent(
+			new MouseEvent("click", { bubbles: true, cancelable: true, button: 0 }),
+		);
+		expect(chipsHarness.handleDateSelectSpy).toHaveBeenCalledTimes(1);
+		expect(moreClickSpy).toHaveBeenCalledTimes(1);
+
+		// Long-press on +more triggers creation menu and suppresses trailing click
+		chipsHarness.moreLink?.dispatchEvent(
+			createTouchPointerEvent("pointerdown", { pointerId: 22, clientX: 95, clientY: 140 }),
+		);
+		vi.advanceTimersByTime(LONG_PRESS_DELAY_MS);
+		expect(chipsHarness.handleDateSelectSpy).toHaveBeenCalledTimes(2);
+		expect(
+			(chipsHarness.handleDateSelectSpy.mock.calls[1]?.[0] as { startStr: string }).startStr,
+		).toBe("2026-11-20");
+
+		const trailingClick = new MouseEvent("click", {
+			bubbles: true,
+			cancelable: true,
+			button: 0,
+		});
+		chipsHarness.moreLink?.dispatchEvent(trailingClick);
+		expect(trailingClick.defaultPrevented).toBe(true);
+		expect(moreClickSpy).toHaveBeenCalledTimes(1);
+		expect(chipsHarness.openMoreSpy).not.toHaveBeenCalled();
+
+		chipsQuickCreate.disable();
+		mobileTap.disable();
+		document.body.replaceChildren();
+
+		// 2. Desktop right-click & touch long-press on full-mode .tnc-more[data-day]
+		const fullHarness = createQuickCreateHarness({
+			gridMode: "full",
+			includeFullMoreButton: true,
+		});
+		const fullQuickCreate = new MonthDayQuickCreateController(fullHarness.app);
+		fullQuickCreate.enable();
+
+		const fullRightClick = new MouseEvent("contextmenu", {
+			bubbles: true,
+			cancelable: true,
+			button: 2,
+		});
+		fullHarness.fullMoreButton?.dispatchEvent(fullRightClick);
+		expect(fullRightClick.defaultPrevented).toBe(true);
+		expect(fullHarness.handleDateSelectSpy).toHaveBeenCalledTimes(1);
+		expect(
+			(fullHarness.handleDateSelectSpy.mock.calls[0]?.[0] as { startStr: string }).startStr,
+		).toBe("2026-11-20");
+
+		const fullClickSpy = vi.fn();
+		fullHarness.fullMoreButton?.addEventListener("click", fullClickSpy);
+		fullHarness.fullMoreButton?.dispatchEvent(
+			createTouchPointerEvent("pointerdown", { pointerId: 23 }),
+		);
+		vi.advanceTimersByTime(LONG_PRESS_DELAY_MS);
+		expect(fullHarness.handleDateSelectSpy).toHaveBeenCalledTimes(2);
+		const fullTrailingClick = new MouseEvent("click", {
+			bubbles: true,
+			cancelable: true,
+			button: 0,
+		});
+		fullHarness.fullMoreButton?.dispatchEvent(fullTrailingClick);
+		expect(fullTrailingClick.defaultPrevented).toBe(true);
+		expect(fullClickSpy).not.toHaveBeenCalled();
+
+		fullQuickCreate.disable();
 	});
 
 	it("cleans up body class, pending timers, and event listeners on disable()", () => {
