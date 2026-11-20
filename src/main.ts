@@ -6,6 +6,7 @@ import {
 	type TaskNotesCalendarEnhancerSettings,
 	TaskNotesCalendarEnhancerSettingTab,
 } from "./settings";
+import { MobileMonthTapController } from "./mobileMonthTap";
 import { ToolbarCalendarPicker } from "./toolbarCalendarPicker";
 
 /**
@@ -18,6 +19,7 @@ export default class TaskNotesCalendarEnhancerPlugin
 	settings: TaskNotesCalendarEnhancerSettings = { ...DEFAULT_SETTINGS };
 	private isLoaded = false;
 	private toolbarCalendarPicker: ToolbarCalendarPicker | null = null;
+	private mobileMonthTap: MobileMonthTapController | null = null;
 
 	async onload(): Promise<void> {
 		this.isLoaded = true;
@@ -53,6 +55,13 @@ export default class TaskNotesCalendarEnhancerPlugin
 		} else {
 			this.toolbarCalendarPicker?.disable();
 		}
+
+		if (this.settings.enableMobileMonthTap) {
+			this.mobileMonthTap ??= new MobileMonthTapController(this.app);
+			this.mobileMonthTap.enable();
+		} else {
+			this.mobileMonthTap?.disable();
+		}
 	}
 
 	clearCalendarCache(): Promise<void> {
@@ -64,5 +73,7 @@ export default class TaskNotesCalendarEnhancerPlugin
 		// Never call Bases config.set() inside onunload() (Bases #1397).
 		this.toolbarCalendarPicker?.disable();
 		this.toolbarCalendarPicker = null;
+		this.mobileMonthTap?.disable();
+		this.mobileMonthTap = null;
 	}
 }
