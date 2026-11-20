@@ -404,7 +404,7 @@ describe("externalCalendarCache", () => {
 		expect(ownGoogle.listenerCount("data-changed")).toBe(0);
 	});
 
-	it("purges OAuth cache on generation mismatch, startup disconnected state, or disconnect methods", async () => {
+	it("retains OAuth cache across restarts when connectionGeneration resets, but purges on mid-session generation change, disconnected state, or disconnect methods", async () => {
 		const app = new App();
 		saveProviderCache(app, "own-google", {
 			calendars: [{ id: "c1", summary: "Cal" }],
@@ -413,7 +413,7 @@ describe("externalCalendarCache", () => {
 				{
 					id: "e1",
 					subscriptionId: "google-c1",
-					title: "Old Account Event",
+					title: "Existing Account Event",
 					start: "2026-11-20T10:00:00Z",
 					allDay: false,
 				},
@@ -435,6 +435,7 @@ describe("externalCalendarCache", () => {
 		});
 
 		const disconnectMs = vi.fn();
+		let googleGen = 0; // Simulates OAuthService.connectionGenerations resetting to 0 on restart.
 		const ownGoogle = createEventEmitterService({
 			getAllEvents: () => [],
 			getAvailableCalendars: () => [],
@@ -447,8 +448,9 @@ describe("externalCalendarCache", () => {
 
 		attachLocalStorageApp(app, {
 			oauthService: {
-				isConnected: (provider: string) => Promise.resolve(provider === "microsoft"),
-				getConnectionGeneration: () => 2,
+				isConnected: () => Promise.resolve(true),
+				getConnectionGeneration: (provider: string) =>
+					provider === "google" ? googleGen : 0,
 			},
 			ownGoogleCalendarService: ownGoogle,
 			microsoftCalendarService: microsoft,
@@ -457,7 +459,12 @@ describe("externalCalendarCache", () => {
 		const controller = new ExternalCalendarCacheController(app);
 		controller.enable();
 
-		// Generation 1 != 2 immediately purged own-google.
+		// Cross-restart generation reset (saved 1 -> startup 0) MUST preserve cache while connected.
+		expect(ownGoogle.getAllEvents()).toHaveLength(1);
+		expect(loadProviderCache(app, "own-google")).not.toBeNull();
+
+		// Mid-session generation change (0 -> 1) MUST purge cache immediately.
+		googleGen = 1;
 		expect(ownGoogle.getAllEvents()).toEqual([]);
 		expect(loadProviderCache(app, "own-google")).toBeNull();
 
@@ -503,10 +510,10 @@ describe("externalCalendarCache", () => {
 		controller.disable();
 	});
 
-	it("handles Hosted Google sign-out, signed-out restore, and preserves cache across offline failure", () => {
+	it("preserves Hosted Google cache across intermediate restore notifications and own-google startup alias, purging only on revoked/signed-out completion", async () => {
 		const app = new App();
 		saveProviderCache(app, "hosted-google", {
-			calendars: [{ id: "hg1", summary: "Hosted" }],
+			calendars: [{ id: "hg1", summary: "Hosted", backgroundColor: "#4285F4" }],
 			subscriptions: [],
 			events: [
 				{
@@ -524,17 +531,49 @@ describe("externalCalendarCache", () => {
 			connection: null,
 			failure: null,
 		};
+		let hostedLiveEvents: Array<Record<string, unknown>> = [];
 		const clientSubscribers = new Set<() => void>();
+		const ownGoogle = createEventEmitterService({
+			getAvailableCalendars: (): Array<Record<string, unknown>> => [],
+			getAllEvents: (): Array<Record<string, unknown>> => [],
+		});
+
 		const hosted = createEventEmitterService({
 			isSignedIn: () => snapshot.sessionId !== null,
 			isConnected: () =>
 				snapshot.sessionId !== null &&
 				(snapshot.connection as { status?: string } | null)?.status === "active",
-			getAvailableCalendars: () => [],
-			getAllEvents: () => [],
+			getAvailableCalendars: () =>
+				snapshot.sessionId !== null ? [{ id: "hg1", summary: "Hosted" }] : [],
+			getAllEvents: () => hostedLiveEvents,
 			signOut: vi.fn(),
+			initialize: () => Promise.resolve(),
 			client: {
 				getSnapshot: () => snapshot,
+				restore: async () => {
+					// Step 1: intermediate notification before session is restored.
+					for (const cb of clientSubscribers) {
+						cb();
+					}
+					await Promise.resolve();
+					// Step 2: sessionId restored while connection object is still null.
+					snapshot = { sessionId: "s1", connection: null, failure: null };
+					tasknotesObj.googleCalendarService = hosted;
+					hosted.emitEvent("session-changed");
+					for (const cb of clientSubscribers) {
+						cb();
+					}
+					await Promise.resolve();
+					// Step 3: connection becomes active.
+					snapshot = {
+						sessionId: "s1",
+						connection: { status: "active" },
+						failure: null,
+					};
+					for (const cb of clientSubscribers) {
+						cb();
+					}
+				},
 				subscribe: (cb: () => void) => {
 					clientSubscribers.add(cb);
 					return () => {
@@ -544,49 +583,87 @@ describe("externalCalendarCache", () => {
 			},
 		});
 
-		attachLocalStorageApp(app, {
+		const tasknotesObj: Record<string, unknown> = {
+			oauthService: {
+				isConnected: () => Promise.resolve(false),
+			},
+			ownGoogleCalendarService: ownGoogle,
 			hostedGoogleCalendarService: hosted,
-		});
+			googleCalendarService: ownGoogle,
+		};
+		attachLocalStorageApp(app, tasknotesObj);
 
 		const controller = new ExternalCalendarCacheController(app);
 		controller.enable();
 
-		// Pending restore serves cached events initially.
-		expect(hosted.getAllEvents()).toHaveLength(1);
+		// T=0: before restore(), active googleCalendarService points to ownGoogle; fallback serves hosted cache!
+		expect(ownGoogle.getAvailableCalendars()).toHaveLength(1);
+		expect(ownGoogle.getAllEvents().map((e) => e.id)).toEqual(["h1"]);
 
-		// Offline startup failure notifies client subscriber -> keep stale cache!
-		snapshot = {
-			sessionId: null,
-			connection: null,
-			failure: { code: "network_error" },
-		};
-		for (const cb of clientSubscribers) {
-			cb();
-		}
-		expect(hosted.getAllEvents()).toHaveLength(1);
+		// Intermediate notifications during restore must NOT flash-clear hosted cache!
+		await hosted.client.restore();
+		expect(hosted.getAllEvents().map((e) => e.id)).toEqual(["h1"]);
 		expect(loadProviderCache(app, "hosted-google")).not.toBeNull();
 
-		// Online restore finds signed-out state (no failure) -> purge!
-		snapshot = {
-			sessionId: null,
-			connection: null,
-			failure: null,
-			restored: true,
+		// Network sync completes -> data-changed switches to live events.
+		hostedLiveEvents = [
+			{
+				id: "h-live",
+				subscriptionId: "google-hg1",
+				title: "Live Hosted",
+				start: "2026-11-20T10:00:00Z",
+				allDay: false,
+			},
+		];
+		hosted.emitEvent("data-changed");
+		expect(hosted.getAllEvents().map((e) => e.id)).toEqual(["h-live"]);
+
+		// Verify offline startup (`failure: "unavailable"`) preserves cache, while confirmed signed-out restore / `session_expired` / `session-changed` sign-out purge it.
+		controller.disable();
+		saveProviderCache(app, "hosted-google", {
+			calendars: [{ id: "hg1", summary: "Hosted" }],
+			subscriptions: [],
+			events: [
+				{
+					id: "h2",
+					subscriptionId: "google-hg1",
+					title: "Offline Preserved",
+					start: "2026-11-20T09:00:00Z",
+					allDay: false,
+				},
+			],
+		});
+		hostedLiveEvents = [];
+		snapshot = { sessionId: null, connection: null, failure: null };
+		hosted.client.restore = () => {
+			for (const cb of clientSubscribers) {
+				cb();
+			}
+			return Promise.resolve();
 		};
+		controller.enable();
+
+		// Offline error preserves cache.
+		snapshot = { sessionId: null, connection: null, failure: "unavailable" };
 		for (const cb of clientSubscribers) {
 			cb();
 		}
+		expect(hosted.getAllEvents()).toHaveLength(1);
+
+		// Restore settles signed out with no failure -> purges cache.
+		snapshot = { sessionId: null, connection: null, failure: null };
+		await hosted.client.restore();
 		expect(hosted.getAllEvents()).toEqual([]);
 		expect(loadProviderCache(app, "hosted-google")).toBeNull();
 
-		// Sign in again, sync, then receive session-changed sign-out -> purge!
+		// Re-seed signed-in then trigger `session-changed` sign-out -> purges cache.
 		controller.disable();
 		saveProviderCache(app, "hosted-google", {
 			calendars: [],
 			subscriptions: [],
 			events: [
 				{
-					id: "h2",
+					id: "h3",
 					subscriptionId: "google-hg1",
 					title: "SignedIn Event",
 					start: "2026-11-20T10:00:00Z",
@@ -606,6 +683,115 @@ describe("externalCalendarCache", () => {
 		hosted.emitEvent("session-changed");
 		expect(hosted.getAllEvents()).toEqual([]);
 		expect(loadProviderCache(app, "hosted-google")).toBeNull();
+
+		controller.disable();
+	});
+
+	it("keeps pending ICS subscriptions cached during staggered fetches until each subscription finishes", async () => {
+		const app = new App();
+		saveProviderCache(app, "ics", {
+			calendars: [],
+			subscriptions: [
+				{
+					id: "ics-a",
+					name: "Feed A",
+					type: "remote",
+					color: "#111111",
+					enabled: true,
+					refreshInterval: 60,
+				},
+				{
+					id: "ics-b",
+					name: "Feed B",
+					type: "remote",
+					color: "#222222",
+					enabled: true,
+					refreshInterval: 60,
+				},
+			],
+			events: [
+				{
+					id: "a-cached",
+					subscriptionId: "ics-a",
+					title: "Cached A",
+					start: "2026-11-20T09:00:00Z",
+					allDay: false,
+				},
+				{
+					id: "b-cached",
+					subscriptionId: "ics-b",
+					title: "Cached B",
+					start: "2026-11-20T14:00:00Z",
+					allDay: false,
+				},
+			],
+		});
+
+		let liveSubs: Array<Record<string, unknown>> = [];
+		let liveEvents: Array<Record<string, unknown>> = [];
+		const lastFetched = new Map<string, string>();
+		const icsService = createEventEmitterService({
+			getSubscriptions: () => liveSubs,
+			getAllEvents: () => liveEvents,
+			getLastFetched: (id: string) => lastFetched.get(id),
+			getLastError: () => undefined,
+			initialize: async () => {
+				liveSubs = [
+					{ id: "ics-a", name: "Feed A", enabled: true, color: "#111111", type: "remote", refreshInterval: 60 },
+					{ id: "ics-b", name: "Feed B", enabled: true, color: "#222222", type: "remote", refreshInterval: 60 },
+				];
+				await Promise.resolve();
+			},
+		});
+
+		attachLocalStorageApp(app, {
+			icsSubscriptionService: icsService,
+		});
+
+		const controller = new ExternalCalendarCacheController(app);
+		controller.enable();
+
+		// T=0: both cached feeds are visible immediately.
+		expect(icsService.getSubscriptions().map((s) => s.id)).toEqual(["ics-a", "ics-b"]);
+		expect(icsService.getAllEvents().map((e) => e.id)).toEqual([
+			"a-cached",
+			"b-cached",
+		]);
+
+		// Step 1: ics-a completes first and emits data-changed while ics-b is still fetching.
+		await icsService.initialize();
+		lastFetched.set("ics-a", "2026-11-20T09:01:00Z");
+		liveEvents = [
+			{
+				id: "a-live",
+				subscriptionId: "ics-a",
+				title: "Live A",
+				start: "2026-11-20T09:30:00Z",
+				allDay: false,
+			},
+		];
+		icsService.emitEvent("data-changed");
+		await Promise.resolve();
+
+		// Crucial: ics-b MUST remain visible alongside live ics-a events!
+		expect(icsService.getAllEvents().map((e) => e.id)).toEqual([
+			"a-live",
+			"b-cached",
+		]);
+		expect(loadProviderCache(app, "ics")?.events.map((e) => e.id)).toEqual([
+			"a-live",
+			"b-cached",
+		]);
+
+		// Step 2: ics-b completes (even with empty live events) -> transitions cleanly to live truth.
+		lastFetched.set("ics-b", "2026-11-20T09:02:00Z");
+		icsService.emitEvent("data-changed");
+		await Promise.resolve();
+
+		expect(icsService.getAllEvents().map((e) => e.id)).toEqual(["a-live"]);
+		expect(loadProviderCache(app, "ics")?.events.map((e) => e.id)).toEqual([
+			"a-live",
+		]);
 
 		controller.disable();
 	});

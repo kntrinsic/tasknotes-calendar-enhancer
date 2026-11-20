@@ -3,12 +3,15 @@ import {
 	asCallable,
 	type CacheableProviderKey,
 	type CacheableProviderTarget,
+	getActiveGoogleCalendarService,
 	getCacheableCalendarProviders,
 	getEnabledProviderCalendarIds,
 	getHostedGoogleConnectionState,
+	getIcsSubscriptionSyncState,
 	getOAuthConnectionGeneration,
 	getTaskNotesPlugin,
 	hasAnyEnabledIcsSubscription,
+	type HostedGoogleConnectionState,
 	isOAuthProviderConnected,
 	isRecord,
 	refreshOpenCalendarViews,
@@ -81,6 +84,10 @@ interface ProviderRuntimeState {
 	syncSeq: number;
 	disposed: boolean;
 	sawHostedSignedIn: boolean;
+	initialOAuthGeneration: number | null;
+	ownOAuthConnected: boolean | null;
+	icsPendingSubIds: Set<string>;
+	icsInitializeFinished: boolean;
 	cachedCalendars: CachedProviderCalendar[];
 	cachedSubscriptions: CachedIcsSubscription[];
 	cachedEvents: CachedCalendarEvent[];
@@ -642,12 +649,34 @@ function collectDisabledIcsSubscriptionIds(
 	return disabledIds;
 }
 
+function isHostedAuthRevoked(conn: HostedGoogleConnectionState): boolean {
+	return (
+		conn.failureCode === "session_expired" ||
+		conn.failureCode === "reconnect_required" ||
+		conn.connectionStatus === "disconnected" ||
+		conn.connectionStatus === "reconnect_required"
+	);
+}
+
+function hasHostedTransientFailure(conn: HostedGoogleConnectionState): boolean {
+	return conn.hasFailure && !isHostedAuthRevoked(conn);
+}
+
+function hasThenMethod(value: unknown): value is PromiseLike<unknown> {
+	return (
+		typeof value === "object" &&
+		value !== null &&
+		asCallable((value as { then?: unknown }).then) !== null
+	);
+}
+
 /**
  * Stale-While-Revalidate cache controller wrapping TaskNotes' external calendar
  * services (`getAllEvents`, `getAvailableCalendars`, `getSubscriptions`) cleanly at runtime.
  */
 export class ExternalCalendarCacheController {
 	private enabled = false;
+	private enableToken = 0;
 	private readonly providers = new Map<CacheableProviderKey, ProviderRuntimeState>();
 
 	constructor(private readonly app: App) {}
@@ -657,24 +686,27 @@ export class ExternalCalendarCacheController {
 			return;
 		}
 		this.enabled = true;
+		const token = ++this.enableToken;
 
-		const targets = getCacheableCalendarProviders(this.app);
-		let shouldRefreshViews = false;
-
-		for (const target of targets) {
-			const attached = this.attachProvider(target);
-			if (
-				!attached.liveSynced &&
-				(attached.cachedEvents.length > 0 ||
-					attached.cachedCalendars.length > 0 ||
-					attached.cachedSubscriptions.length > 0)
-			) {
-				shouldRefreshViews = true;
-			}
+		if (this.attachMissingProviders()) {
+			refreshOpenCalendarViews(this.app);
 		}
 
-		if (shouldRefreshViews) {
-			refreshOpenCalendarViews(this.app);
+		const workspace = this.app.workspace as unknown as Record<string, unknown>;
+		const onLayoutReadyFn = asCallable(workspace.onLayoutReady);
+		if (onLayoutReadyFn) {
+			try {
+				onLayoutReadyFn.call(this.app.workspace, () => {
+					if (!this.enabled || this.enableToken !== token) {
+						return;
+					}
+					if (this.attachMissingProviders()) {
+						refreshOpenCalendarViews(this.app);
+					}
+				});
+			} catch {
+				// Ignore mock workspaces without functional onLayoutReady.
+			}
 		}
 	}
 
@@ -683,6 +715,7 @@ export class ExternalCalendarCacheController {
 			return;
 		}
 		this.enabled = false;
+		this.enableToken += 1;
 
 		for (const state of this.providers.values()) {
 			state.disposed = true;
@@ -694,6 +727,7 @@ export class ExternalCalendarCacheController {
 				}
 			}
 			state.disposers.length = 0;
+			state.icsPendingSubIds.clear();
 			state.cachedCalendars = [];
 			state.cachedSubscriptions = [];
 			state.cachedEvents = [];
@@ -708,6 +742,7 @@ export class ExternalCalendarCacheController {
 		let hadStalePreSyncData = false;
 		for (const state of this.providers.values()) {
 			state.syncSeq += 1;
+			state.icsPendingSubIds.clear();
 			if (
 				!state.liveSynced &&
 				(state.cachedEvents.length > 0 ||
@@ -728,8 +763,49 @@ export class ExternalCalendarCacheController {
 		}
 	}
 
+	private attachMissingProviders(): boolean {
+		const targets = getCacheableCalendarProviders(this.app);
+		let shouldRefreshViews = false;
+
+		for (const target of targets) {
+			if (this.providers.has(target.key)) {
+				continue;
+			}
+			const attached = this.attachProvider(target);
+			if (
+				!attached.liveSynced &&
+				(attached.cachedEvents.length > 0 ||
+					attached.cachedCalendars.length > 0 ||
+					attached.cachedSubscriptions.length > 0)
+			) {
+				shouldRefreshViews = true;
+			}
+		}
+
+		return shouldRefreshViews;
+	}
+
 	private attachProvider(target: CacheableProviderTarget): ProviderRuntimeState {
 		const loaded = loadProviderCache(this.app, target.key);
+		const pendingSubIds = new Set<string>();
+		if (target.key === "ics" && loaded) {
+			for (const ev of loaded.events) {
+				pendingSubIds.add(ev.subscriptionId);
+			}
+			for (const sub of loaded.subscriptions) {
+				if (sub.enabled) {
+					pendingSubIds.add(sub.id);
+				}
+			}
+		}
+
+		const initialOAuthGeneration =
+			target.key === "own-google"
+				? getOAuthConnectionGeneration(this.app, "google")
+				: target.key === "microsoft"
+					? getOAuthConnectionGeneration(this.app, "microsoft")
+					: null;
+
 		const state: ProviderRuntimeState = {
 			key: target.key,
 			service: target.service,
@@ -738,6 +814,10 @@ export class ExternalCalendarCacheController {
 			syncSeq: 0,
 			disposed: false,
 			sawHostedSignedIn: false,
+			initialOAuthGeneration,
+			ownOAuthConnected: null,
+			icsPendingSubIds: pendingSubIds,
+			icsInitializeFinished: false,
 			cachedCalendars: loaded ? cloneItems(loaded.calendars) : [],
 			cachedSubscriptions: loaded ? cloneItems(loaded.subscriptions) : [],
 			cachedEvents: loaded ? cloneItems(loaded.events) : [],
@@ -759,12 +839,8 @@ export class ExternalCalendarCacheController {
 		state: ProviderRuntimeState,
 		loaded: ExternalCalendarCachePayload | null,
 	): void {
-		if (!loaded) {
-			return;
-		}
-
 		if (state.key === "ics") {
-			if (hasAnyEnabledIcsSubscription(this.app, state.service) === false) {
+			if (loaded && hasAnyEnabledIcsSubscription(this.app, state.service) === false) {
 				this.purgeProviderCache(state, false);
 			}
 			return;
@@ -775,33 +851,117 @@ export class ExternalCalendarCacheController {
 			if (conn.signedIn) {
 				state.sawHostedSignedIn = true;
 			}
-			if (conn.settled && (!conn.signedIn || (!conn.connected && !conn.hasFailure))) {
+			if (
+				loaded &&
+				(isHostedAuthRevoked(conn) ||
+					(conn.settled && !conn.signedIn && !hasHostedTransientFailure(conn)))
+			) {
 				this.purgeProviderCache(state, false);
 			}
 			return;
 		}
 
 		const oauthProvider = state.key === "own-google" ? "google" : "microsoft";
-		const currentGen = getOAuthConnectionGeneration(this.app, oauthProvider);
-		if (
-			loaded.connectionGeneration !== undefined &&
-			currentGen !== null &&
-			loaded.connectionGeneration !== currentGen
-		) {
-			this.purgeProviderCache(state, false);
-			return;
-		}
-
 		const seqAtStart = state.syncSeq;
 		void isOAuthProviderConnected(this.app, oauthProvider).then((connected) => {
-			if (!this.enabled || state.disposed || state.syncSeq !== seqAtStart) {
+			if (!this.isProviderActive(state, seqAtStart)) {
 				return;
 			}
-			if (connected === false) {
+			state.ownOAuthConnected = connected;
+			if (connected === false && loaded) {
 				const hadStale = state.cachedEvents.length > 0 || state.cachedCalendars.length > 0;
 				this.purgeProviderCache(state, hadStale && !state.liveSynced);
 			}
 		});
+	}
+
+	private checkMidSessionOAuthGeneration(state: ProviderRuntimeState): boolean {
+		if (state.key !== "own-google" && state.key !== "microsoft") {
+			return false;
+		}
+		if (state.initialOAuthGeneration === null) {
+			return false;
+		}
+		const oauthProvider = state.key === "own-google" ? "google" : "microsoft";
+		const currentGen = getOAuthConnectionGeneration(this.app, oauthProvider);
+		if (currentGen !== null && currentGen !== state.initialOAuthGeneration) {
+			state.initialOAuthGeneration = currentGen;
+			this.purgeProviderCache(state, false);
+			return true;
+		}
+		return false;
+	}
+
+	private getHostedFallbackForOwnGoogle(
+		ownState: ProviderRuntimeState,
+	): ProviderRuntimeState | null {
+		if (ownState.key !== "own-google" || ownState.ownOAuthConnected === true) {
+			return null;
+		}
+		if (getActiveGoogleCalendarService(this.app) !== ownState.service) {
+			return null;
+		}
+		const hosted = this.providers.get("hosted-google");
+		if (!hosted || hosted.disposed || hosted.liveSynced) {
+			return null;
+		}
+		return hosted;
+	}
+
+	private resolveIcsEventsWithPendingCache(
+		state: ProviderRuntimeState,
+		live: unknown,
+	): unknown {
+		if (state.liveSynced || state.cachedEvents.length === 0) {
+			return live;
+		}
+
+		if (asCallable(state.service.getLastFetched) === null) {
+			if (Array.isArray(live) && live.length > 0) {
+				return live;
+			}
+			return filterCachedEventsForProvider(this.app, state, state.cachedEvents);
+		}
+
+		const liveEvents: unknown[] = Array.isArray(live) ? live : [];
+		const fetchedOrPresentSubIds = new Set<string>();
+		for (const entry of liveEvents) {
+			if (isRecord(entry) && typeof entry.subscriptionId === "string") {
+				fetchedOrPresentSubIds.add(entry.subscriptionId);
+			}
+		}
+		for (const subId of state.icsPendingSubIds) {
+			if (getIcsSubscriptionSyncState(state.service, subId).fetched) {
+				fetchedOrPresentSubIds.add(subId);
+			}
+		}
+
+		const liveSubsRaw = state.getLiveSubscriptions
+			? state.getLiveSubscriptions()
+			: safeCall(state.service, "getSubscriptions");
+		let enabledLiveSubIds: Set<string> | null = null;
+		if (Array.isArray(liveSubsRaw) && liveSubsRaw.length > 0) {
+			enabledLiveSubIds = new Set<string>();
+			for (const entry of liveSubsRaw) {
+				if (isRecord(entry) && typeof entry.id === "string" && entry.enabled === true) {
+					enabledLiveSubIds.add(entry.id);
+				}
+			}
+		}
+
+		const disabledIds = collectDisabledIcsSubscriptionIds(this.app, state.service);
+		const remainingCached = state.cachedEvents.filter(
+			(ev) =>
+				state.icsPendingSubIds.has(ev.subscriptionId) &&
+				!fetchedOrPresentSubIds.has(ev.subscriptionId) &&
+				!disabledIds.has(ev.subscriptionId) &&
+				(enabledLiveSubIds === null || enabledLiveSubIds.has(ev.subscriptionId)),
+		);
+
+		if (remainingCached.length === 0) {
+			return live;
+		}
+		return [...liveEvents, ...cloneItems(remainingCached)];
 	}
 
 	private installProviderMethodWrappers(state: ProviderRuntimeState): void {
@@ -809,26 +969,36 @@ export class ExternalCalendarCacheController {
 		const app = this.app;
 
 		if (asCallable(service.getAllEvents)) {
-			const unpatchEvents = patchMethod(
-				service,
-				"getAllEvents",
-				(original) => {
-					state.getLiveEvents = () => original.call(service);
-					return function (this: unknown, ...args: unknown[]): unknown {
-						const live = original.apply(this, args);
-						if (state.liveSynced) {
-							return live;
-						}
-						if (Array.isArray(live) && live.length > 0) {
-							return live;
-						}
-						if (state.cachedEvents.length > 0) {
-							return filterCachedEventsForProvider(app, state, state.cachedEvents);
-						}
+			const unpatchEvents = patchMethod(service, "getAllEvents", (original) => {
+				state.getLiveEvents = () => original.call(service);
+				return (...args: unknown[]): unknown => {
+					if (this.checkMidSessionOAuthGeneration(state)) {
+						return original.apply(service, args);
+					}
+					const live = original.apply(service, args);
+					if (state.liveSynced) {
 						return live;
-					};
-				},
-			);
+					}
+					if (state.key === "ics") {
+						return this.resolveIcsEventsWithPendingCache(state, live);
+					}
+					if (Array.isArray(live) && live.length > 0) {
+						return live;
+					}
+					if (state.cachedEvents.length > 0) {
+						return filterCachedEventsForProvider(app, state, state.cachedEvents);
+					}
+					const hostedFallback = this.getHostedFallbackForOwnGoogle(state);
+					if (hostedFallback && hostedFallback.cachedEvents.length > 0) {
+						return filterCachedEventsForProvider(
+							app,
+							hostedFallback,
+							hostedFallback.cachedEvents,
+						);
+					}
+					return live;
+				};
+			});
 			if (unpatchEvents) {
 				state.disposers.push(unpatchEvents);
 			}
@@ -840,8 +1010,11 @@ export class ExternalCalendarCacheController {
 				"getAvailableCalendars",
 				(original) => {
 					state.getLiveCalendars = () => original.call(service);
-					return function (this: unknown, ...args: unknown[]): unknown {
-						const live = original.apply(this, args);
+					return (...args: unknown[]): unknown => {
+						if (this.checkMidSessionOAuthGeneration(state)) {
+							return original.apply(service, args);
+						}
+						const live = original.apply(service, args);
 						if (state.liveSynced) {
 							return live;
 						}
@@ -850,6 +1023,10 @@ export class ExternalCalendarCacheController {
 						}
 						if (state.cachedCalendars.length > 0) {
 							return cloneItems(state.cachedCalendars);
+						}
+						const hostedFallback = this.getHostedFallbackForOwnGoogle(state);
+						if (hostedFallback && hostedFallback.cachedCalendars.length > 0) {
+							return cloneItems(hostedFallback.cachedCalendars);
 						}
 						return live;
 					};
@@ -887,6 +1064,34 @@ export class ExternalCalendarCacheController {
 		}
 	}
 
+	private hookMethodCompletion(
+		target: Record<string, unknown>,
+		methodName: string,
+		state: ProviderRuntimeState,
+		onComplete: () => void,
+	): void {
+		if (!asCallable(target[methodName])) {
+			return;
+		}
+		const unpatch = patchMethod(target, methodName, (original) => (...args: unknown[]): unknown => {
+			const result = original.apply(target, args);
+			if (hasThenMethod(result)) {
+				return Promise.resolve(result).finally(() => {
+					if (this.enabled && !state.disposed) {
+						onComplete();
+					}
+				});
+			}
+			if (this.enabled && !state.disposed) {
+				onComplete();
+			}
+			return result;
+		});
+		if (unpatch) {
+			state.disposers.push(unpatch);
+		}
+	}
+
 	private installDisconnectHooks(state: ProviderRuntimeState): void {
 		const purgeMethods =
 			state.key === "hosted-google"
@@ -904,16 +1109,16 @@ export class ExternalCalendarCacheController {
 				methodName,
 				(original) =>
 					(...args: unknown[]): unknown => {
-						const shouldRefresh =
-							!state.liveSynced &&
-							(state.cachedEvents.length > 0 || state.cachedCalendars.length > 0);
-						this.purgeProviderCache(state, shouldRefresh);
+						if (state.key === "hosted-google") {
+							this.purgeHostedCacheAndRefresh(state);
+						} else {
+							const shouldRefresh =
+								!state.liveSynced &&
+								(state.cachedEvents.length > 0 || state.cachedCalendars.length > 0);
+							this.purgeProviderCache(state, shouldRefresh);
+						}
 						const result = original.apply(state.service, args);
-						if (
-							typeof result === "object" &&
-							result !== null &&
-							asCallable((result as { then?: unknown }).then)
-						) {
+						if (hasThenMethod(result)) {
 							return Promise.resolve(result).finally(() => {
 								if (!state.disposed) {
 									clearProviderCacheStorage(this.app, state.key);
@@ -930,34 +1135,65 @@ export class ExternalCalendarCacheController {
 
 		if (state.key === "hosted-google") {
 			for (const restoreMethod of ["initialize", "resume"]) {
-				if (!asCallable(state.service[restoreMethod])) {
-					continue;
-				}
-				const unpatchRestore = patchMethod(
-					state.service,
-					restoreMethod,
-					(original) =>
-						(...args: unknown[]): unknown => {
-							const result = original.apply(state.service, args);
-							if (
-								typeof result === "object" &&
-								result !== null &&
-								asCallable((result as { then?: unknown }).then)
-							) {
-								return Promise.resolve(result).finally(() => {
-									if (this.enabled && !state.disposed) {
-										this.evaluateHostedClientTransition(state, true);
-									}
-								});
-							}
-							this.evaluateHostedClientTransition(state, true);
-							return result;
-						},
-				);
-				if (unpatchRestore) {
-					state.disposers.push(unpatchRestore);
-				}
+				this.hookMethodCompletion(state.service, restoreMethod, state, () => {
+					this.evaluateHostedClientTransition(state, true);
+				});
 			}
+			if (isRecord(state.service.client)) {
+				this.hookMethodCompletion(state.service.client, "restore", state, () => {
+					this.evaluateHostedClientTransition(state, true);
+				});
+			}
+		}
+
+		if (state.key === "ics") {
+			this.hookMethodCompletion(state.service, "initialize", state, () => {
+				state.icsInitializeFinished = true;
+				const liveSubs = state.getLiveSubscriptions
+					? state.getLiveSubscriptions()
+					: safeCall(state.service, "getSubscriptions");
+				if (Array.isArray(liveSubs) && liveSubs.length === 0) {
+					this.purgeProviderCache(state, !state.liveSynced);
+				}
+			});
+			for (const mutationMethod of ["removeSubscription", "updateSubscription"]) {
+				this.hookMethodCompletion(state.service, mutationMethod, state, () => {
+					this.reconcileIcsSubscriptionsWithLiveState(state);
+				});
+			}
+		}
+	}
+
+	private reconcileIcsSubscriptionsWithLiveState(state: ProviderRuntimeState): void {
+		const liveSubs = state.getLiveSubscriptions
+			? state.getLiveSubscriptions()
+			: safeCall(state.service, "getSubscriptions");
+		if (!Array.isArray(liveSubs)) {
+			return;
+		}
+		if (liveSubs.length === 0) {
+			if (state.icsInitializeFinished) {
+				this.purgeProviderCache(state, false);
+			}
+			return;
+		}
+
+		const enabledIds = new Set<string>();
+		for (const entry of liveSubs) {
+			if (isRecord(entry) && typeof entry.id === "string" && entry.enabled === true) {
+				enabledIds.add(entry.id);
+			}
+		}
+		for (const subId of Array.from(state.icsPendingSubIds)) {
+			if (!enabledIds.has(subId)) {
+				state.icsPendingSubIds.delete(subId);
+			}
+		}
+		state.cachedEvents = state.cachedEvents.filter((ev) => enabledIds.has(ev.subscriptionId));
+		state.cachedSubscriptions = state.cachedSubscriptions.filter((sub) => enabledIds.has(sub.id));
+
+		if (enabledIds.size === 0) {
+			this.purgeProviderCache(state, !state.liveSynced);
 		}
 	}
 
@@ -986,8 +1222,8 @@ export class ExternalCalendarCacheController {
 						state.sawHostedSignedIn = true;
 						return;
 					}
-					if (!conn.hasFailure) {
-						this.purgeProviderCache(state, !state.liveSynced);
+					if (!hasHostedTransientFailure(conn)) {
+						this.purgeHostedCacheAndRefresh(state);
 					}
 				},
 			);
@@ -999,7 +1235,7 @@ export class ExternalCalendarCacheController {
 				if (!this.enabled || state.disposed) {
 					return;
 				}
-				this.evaluateHostedClientTransition(state, true);
+				this.evaluateHostedClientTransition(state, false);
 			});
 			if (clientDisposer) {
 				state.disposers.push(clientDisposer);
@@ -1009,30 +1245,147 @@ export class ExternalCalendarCacheController {
 
 	private evaluateHostedClientTransition(
 		state: ProviderRuntimeState,
-		notifiedAfterRestore: boolean,
+		afterRestoreCompleted: boolean,
 	): void {
 		const conn = getHostedGoogleConnectionState(state.service);
 		if (conn.signedIn) {
 			state.sawHostedSignedIn = true;
 		}
-		if (conn.hasFailure) {
+		if (isHostedAuthRevoked(conn)) {
+			this.purgeHostedCacheAndRefresh(state);
+			return;
+		}
+		if (hasHostedTransientFailure(conn)) {
 			return;
 		}
 
 		const lostSession = state.sawHostedSignedIn && !conn.signedIn;
-		const settledSignedOut =
-			(conn.settled || notifiedAfterRestore) && (!conn.signedIn || !conn.connected);
+		const settledSignedOut = (afterRestoreCompleted || conn.settled) && !conn.signedIn;
 
 		if (lostSession || settledSignedOut) {
-			const hadStale =
-				!state.liveSynced &&
-				(state.cachedEvents.length > 0 || state.cachedCalendars.length > 0);
-			this.purgeProviderCache(state, hadStale);
+			this.purgeHostedCacheAndRefresh(state);
 		}
+	}
+
+	private purgeHostedCacheAndRefresh(state: ProviderRuntimeState): void {
+		const activeGoogle = getActiveGoogleCalendarService(this.app);
+		const ownGoogle = this.providers.get("own-google");
+		const actingAsFallback =
+			activeGoogle !== null && ownGoogle !== undefined && activeGoogle === ownGoogle.service;
+		const hadStale =
+			!state.liveSynced &&
+			(state.cachedEvents.length > 0 ||
+				state.cachedCalendars.length > 0 ||
+				actingAsFallback);
+		this.purgeProviderCache(state, hadStale);
+	}
+
+	private handleIcsDataChanged(state: ProviderRuntimeState): void {
+		const liveSubs = state.getLiveSubscriptions
+			? state.getLiveSubscriptions()
+			: safeCall(state.service, "getSubscriptions");
+		const liveEvents = state.getLiveEvents
+			? state.getLiveEvents()
+			: safeCall(state.service, "getAllEvents");
+
+		const liveSubsArray: unknown[] = Array.isArray(liveSubs) ? liveSubs : [];
+		const liveEventsArray: unknown[] = Array.isArray(liveEvents) ? liveEvents : [];
+		const hasSyncTracker = asCallable(state.service.getLastFetched) !== null;
+
+		if (hasSyncTracker && state.icsPendingSubIds.size > 0) {
+			let liveSubEnabledMap: Map<string, boolean> | null = null;
+			if (liveSubsArray.length > 0) {
+				liveSubEnabledMap = new Map<string, boolean>();
+				for (const entry of liveSubsArray) {
+					if (isRecord(entry) && typeof entry.id === "string") {
+						liveSubEnabledMap.set(entry.id, entry.enabled === true);
+					}
+				}
+			}
+
+			for (const subId of Array.from(state.icsPendingSubIds)) {
+				const syncState = getIcsSubscriptionSyncState(state.service, subId);
+				const removedOrDisabled =
+					(liveSubEnabledMap !== null && liveSubEnabledMap.get(subId) !== true) ||
+					(state.icsInitializeFinished && liveSubsArray.length === 0);
+				if (syncState.fetched || removedOrDisabled) {
+					state.icsPendingSubIds.delete(subId);
+				}
+			}
+
+			state.cachedEvents = state.cachedEvents.filter((ev) =>
+				state.icsPendingSubIds.has(ev.subscriptionId),
+			);
+			state.cachedSubscriptions =
+				liveSubsArray.length > 0
+					? []
+					: state.cachedSubscriptions.filter((sub) => state.icsPendingSubIds.has(sub.id));
+
+			if (state.icsPendingSubIds.size === 0) {
+				state.liveSynced = true;
+				state.cachedSubscriptions = [];
+				state.cachedEvents = [];
+			}
+
+			const liveEventSubIds = new Set<string>();
+			for (const entry of liveEventsArray) {
+				if (isRecord(entry) && typeof entry.subscriptionId === "string") {
+					liveEventSubIds.add(entry.subscriptionId);
+				}
+			}
+			const remainingCachedEvents = state.cachedEvents.filter(
+				(ev) => !liveEventSubIds.has(ev.subscriptionId),
+			);
+			const combinedEvents = [
+				...sanitizeCalendarEvents(liveEventsArray),
+				...remainingCachedEvents,
+			];
+			const combinedSubs = liveSubsArray.length > 0 ? liveSubsArray : state.cachedSubscriptions;
+
+			if (
+				hasAnyEnabledIcsSubscription(this.app, state.service) === false &&
+				combinedEvents.length === 0
+			) {
+				this.purgeProviderCache(state, false);
+				return;
+			}
+
+			saveProviderCache(this.app, state.key, {
+				calendars: [],
+				subscriptions: combinedSubs,
+				events: combinedEvents,
+			});
+			return;
+		}
+
+		state.liveSynced = true;
+		state.icsPendingSubIds.clear();
+		state.cachedCalendars = [];
+		state.cachedSubscriptions = [];
+		state.cachedEvents = [];
+		state.syncSeq += 1;
+
+		if (
+			hasAnyEnabledIcsSubscription(this.app, state.service) === false &&
+			liveEventsArray.length === 0
+		) {
+			this.purgeProviderCache(state, false);
+			return;
+		}
+		saveProviderCache(this.app, state.key, {
+			calendars: [],
+			subscriptions: liveSubsArray,
+			events: liveEventsArray,
+		});
 	}
 
 	private async handleProviderDataChanged(state: ProviderRuntimeState): Promise<void> {
 		if (!this.enabled || state.disposed) {
+			return;
+		}
+
+		if (state.key === "ics") {
+			this.handleIcsDataChanged(state);
 			return;
 		}
 
@@ -1047,12 +1400,6 @@ export class ExternalCalendarCacheController {
 		const liveCalendars = state.getLiveCalendars
 			? state.getLiveCalendars()
 			: safeCall(state.service, "getAvailableCalendars");
-		const liveSubscriptions =
-			state.kind === "ics"
-				? state.getLiveSubscriptions
-					? state.getLiveSubscriptions()
-					: safeCall(state.service, "getSubscriptions")
-				: [];
 		const liveEvents = state.getLiveEvents
 			? state.getLiveEvents()
 			: safeCall(state.service, "getAllEvents");
@@ -1062,7 +1409,7 @@ export class ExternalCalendarCacheController {
 			if (conn.signedIn) {
 				state.sawHostedSignedIn = true;
 			}
-			if (!conn.signedIn || (!conn.connected && !conn.hasFailure)) {
+			if (isHostedAuthRevoked(conn) || (!conn.signedIn && !hasHostedTransientFailure(conn))) {
 				this.purgeProviderCache(state, false);
 				return;
 			}
@@ -1074,29 +1421,16 @@ export class ExternalCalendarCacheController {
 			return;
 		}
 
-		if (state.key === "ics") {
-			const enabledIcs = hasAnyEnabledIcsSubscription(this.app, state.service);
-			const eventsList = Array.isArray(liveEvents) ? liveEvents : [];
-			if (enabledIcs === false && eventsList.length === 0) {
-				this.purgeProviderCache(state, false);
-				return;
-			}
-			saveProviderCache(this.app, state.key, {
-				calendars: [],
-				subscriptions: liveSubscriptions,
-				events: liveEvents,
-			});
-			return;
-		}
-
+		this.checkMidSessionOAuthGeneration(state);
+		const seqAfterGenCheck = state.syncSeq;
 		const oauthProvider = state.key === "own-google" ? "google" : "microsoft";
-		const generation = getOAuthConnectionGeneration(this.app, oauthProvider);
 		const connected = await isOAuthProviderConnected(this.app, oauthProvider);
 
-		if (!this.isProviderActive(state, seq)) {
+		if (!this.isProviderActive(state, Math.max(seq, seqAfterGenCheck))) {
 			return;
 		}
 
+		state.ownOAuthConnected = connected;
 		if (connected === false) {
 			this.purgeProviderCache(state, false);
 			return;
@@ -1106,7 +1440,6 @@ export class ExternalCalendarCacheController {
 			calendars: liveCalendars,
 			subscriptions: [],
 			events: liveEvents,
-			connectionGeneration: generation,
 		});
 	}
 
@@ -1116,6 +1449,7 @@ export class ExternalCalendarCacheController {
 
 	private purgeProviderCache(state: ProviderRuntimeState, refreshViews: boolean): void {
 		state.syncSeq += 1;
+		state.icsPendingSubIds.clear();
 		state.cachedCalendars = [];
 		state.cachedSubscriptions = [];
 		state.cachedEvents = [];
