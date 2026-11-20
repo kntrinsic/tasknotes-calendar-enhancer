@@ -25,6 +25,8 @@ import {
 	WeekendHolidayHighlighter,
 } from "./weekendHolidayHighlighter";
 
+export const VIVID_CHIP_COLORS_BODY_CLASS = "tnce-vivid-chip-colors";
+
 /**
  * Companion plugin extending TaskNotes without modifying upstream files.
  */
@@ -137,6 +139,8 @@ export default class TaskNotesCalendarEnhancerPlugin
 		} else {
 			this.weekendHolidayHighlighter?.disable();
 		}
+
+		this.syncVividChipColorsClass(this.settings.enableVividChipColors);
 	}
 
 	async setCalendarColorOverride(
@@ -233,6 +237,7 @@ export default class TaskNotesCalendarEnhancerPlugin
 
 	private teardownFeatures(): void {
 		// Never call Bases config.set() inside onunload() (Bases #1397).
+		this.syncVividChipColorsClass(false);
 		this.weekendHolidayHighlighter?.disable();
 		this.weekendHolidayHighlighter = null;
 		this.toolbarCalendarPicker?.disable();
@@ -245,5 +250,12 @@ export default class TaskNotesCalendarEnhancerPlugin
 		this.calendarColorOverrides = null;
 		this.externalCalendarCache?.disable();
 		this.externalCalendarCache = null;
+	}
+
+	private syncVividChipColorsClass(enabled: boolean): void {
+		if (typeof document === "undefined") {
+			return;
+		}
+		document.body.classList.toggle(VIVID_CHIP_COLORS_BODY_CLASS, enabled);
 	}
 }

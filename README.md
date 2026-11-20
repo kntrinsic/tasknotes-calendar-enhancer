@@ -35,6 +35,9 @@ Each feature has an independent toggle in **Settings → TaskNotes Calendar Enha
 - Supports selecting any connected Google, Microsoft, or ICS calendar as an external holiday source (`holidayCalendarKeys`, tucked inside a collapsible settings disclosure so large calendar lists stay compact).
 - Displays inline holiday name labels in Month view (centered to the left of the date number), Week/Day headers, and List day headers, plus hover tooltips on date numbers.
 
+### 7. Vivid Month Chip Colors (`enableVividChipColors`)
+- Enhances color contrast on TaskNotes month `chips` views (`560px–850px` width and mobile tablets/phones) by adding a solid `3px` leading calendar color bar, preserving saturated OKLCH hues, strengthening the chip tint and inset border across light/dark themes, and keeping active external calendar chips at full opacity.
+
 ## Installation via BRAT
 
 This plugin is packaged for desktop and mobile (`"isDesktopOnly": false`) and distributed via **BRAT** (Beta Reviewers Auto-update Tester):

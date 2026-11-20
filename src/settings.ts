@@ -30,6 +30,7 @@ export interface TaskNotesCalendarEnhancerSettings {
 	enableMonthDayQuickCreate: boolean;
 	enableCustomCalendarColors: boolean;
 	calendarColorOverrides: Record<string, string>;
+	enableVividChipColors: boolean;
 	enableWeekendHolidayColors: boolean;
 	enableJapaneseHolidays: boolean;
 	holidayCalendarKeys: string[];
@@ -41,6 +42,7 @@ type BooleanSettingKey =
 	| "enableMobileMonthTap"
 	| "enableMonthDayQuickCreate"
 	| "enableCustomCalendarColors"
+	| "enableVividChipColors"
 	| "enableWeekendHolidayColors"
 	| "enableJapaneseHolidays";
 
@@ -51,6 +53,7 @@ export const DEFAULT_SETTINGS: Readonly<TaskNotesCalendarEnhancerSettings> = {
 	enableMonthDayQuickCreate: true,
 	enableCustomCalendarColors: true,
 	calendarColorOverrides: {},
+	enableVividChipColors: true,
 	enableWeekendHolidayColors: true,
 	enableJapaneseHolidays: true,
 	holidayCalendarKeys: [],
@@ -112,6 +115,10 @@ export function normalizeSettings(raw: unknown): TaskNotesCalendarEnhancerSettin
 				? record.enableCustomCalendarColors
 				: DEFAULT_SETTINGS.enableCustomCalendarColors,
 		calendarColorOverrides: sanitizeCalendarColorOverrides(record.calendarColorOverrides),
+		enableVividChipColors:
+			typeof record.enableVividChipColors === "boolean"
+				? record.enableVividChipColors
+				: DEFAULT_SETTINGS.enableVividChipColors,
 		enableWeekendHolidayColors:
 			typeof record.enableWeekendHolidayColors === "boolean"
 				? record.enableWeekendHolidayColors
@@ -205,6 +212,19 @@ export class TaskNotesCalendarEnhancerSettingTab extends PluginSettingTab {
 						this.updateToggleSetting("enableCustomCalendarColors", value, {
 							rerender: true,
 						});
+					}),
+			);
+
+		new Setting(containerEl)
+			.setName("Vivid month chip colors")
+			.setDesc(
+				"Increase calendar color contrast and add a leading color bar on month chips so calendars stay distinguishable on mobile and narrow screens.",
+			)
+			.addToggle((toggle) =>
+				toggle
+					.setValue(this.plugin.settings.enableVividChipColors)
+					.onChange((value) => {
+						this.updateToggleSetting("enableVividChipColors", value);
 					}),
 			);
 
