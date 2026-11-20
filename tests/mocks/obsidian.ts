@@ -111,3 +111,7 @@ export class Setting {
 		return this;
 	}
 }
+
+export function setIcon(parent: HTMLElement, iconId: string): void {
+	parent.dataset.icon = iconId;
+}
